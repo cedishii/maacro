@@ -45,6 +45,12 @@ class Card:
         return any(word in text for word in ("golem", "wishingstar", "starfallcard"))
 
     @property
+    def regen(self) -> bool:
+        """An enemy regeneration card: never picked unless every card is one."""
+        text = re.sub(r"[^a-z]", "", self.text.lower())
+        return "regen" in text or "egenerat" in text
+
+    @property
     def debuff_amount(self) -> int | None:
         """The biggest "+N Enemy …" number on the card (e.g. +50 Enemy
         Physical Resist → 50), or None if none was read. OCR often garbles
@@ -157,10 +163,15 @@ def read_votes(frame: np.ndarray, cards: list[Card], reader: NumberReader) -> No
 def needs_votes(cards: list[Card]) -> bool:
     """Vote counts only matter when every card is red and the best ones tie on
     pearls and debuff (call read_card_texts first). Skipping them saves time."""
+    cards = _without_regen(cards)
     if not cards or any(c.color != "red" for c in cards):
         return False
     keys = sorted(_mildness(c) for c in cards)
     return len(keys) > 1 and keys[0] == keys[1]
+
+
+def _without_regen(cards: list[Card]) -> list[Card]:
+    return [c for c in cards if not c.regen] or cards
 
 
 def _mildness(card: Card) -> tuple[int, int, int]:
@@ -179,6 +190,8 @@ def choose_card(cards: list[Card]) -> tuple[Card, str] | None:
     golem = next((c for c in cards if c.star_golem), None)
     if golem is not None:
         return golem, "Star Golem card"
+    # Enemy regen cards are left out, unless every card is one.
+    cards = _without_regen(cards)
     # 1. Buffs: green first, then blue / any other non-red colour.
     for wanted, label in (("green", "green card"), ("other", "blue/other card")):
         special = [c for c in cards if c.color == wanted]

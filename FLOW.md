@@ -44,7 +44,8 @@ Reference screenshots are in `screens/`.
 ### Card pick — every few waves (`07_card_pick`, `08_card_pick_green`)
 0. A **Star Golem +100%** card (Starfall weather: "Wishing Star … Starfall Card"; any of "golem", "Wishing Star", "Starfall Card" in its text) → always pick it.
 1. Any **green / non-red** card → pick it.
-2. All red → the **mildest** card: smallest SummerPearls bonus (a read under 10% is a cut-off number and is ignored), then the mildest kind (Enemy Health, then Physical Resist), then the smallest "+N Enemy …" number, then the most votes, then the leftmost.
+2. Enemy **Regen** cards are never picked (unless all three are Regen).
+3. All red → the **mildest** card: smallest SummerPearls bonus (a read under 10% is a cut-off number and is ignored), then the mildest kind (Enemy Health, then Physical Resist), then the smallest "+N Enemy …" number, then the most votes, then the leftmost.
 3. Click **Vote**.
 
 ## End of match
