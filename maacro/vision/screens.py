@@ -43,6 +43,9 @@ class Detection:
     no_money: bool = False           # "Not enough money!" banner
     yen: int | None = None           # money shown above the hotbar
     leaderboard_close: tuple[float, float] | None = None   # the × of an open damage leaderboard
+    # An item drop (charm, portal…) waiting for "Click anywhere to continue":
+    # (item name, rarity), either may be "" if not read.
+    drop: tuple[str, str] | None = None
     lines: list[OcrLine] = field(default_factory=list)
 
     @property
@@ -199,4 +202,29 @@ def detect_screen(frame: np.ndarray, lines: list[OcrLine]) -> Detection:
     if header is not None and det.screen in ("in_match", "unit_manager", "vote_start", "unknown"):
         det.leaderboard_close = (header.x - 2.36 * header.w,
                                  header.y + header.h / 2 - 1.7 * header.h)
+    det.drop = _drop(lines)
     return det
+
+
+RARITIES = ("common", "uncommon", "rare", "epic", "legendary", "mythic", "secret", "exclusive")
+
+
+def _drop(lines: list[OcrLine]) -> tuple[str, str] | None:
+    """The item-drop popup: name, rarity, then "(Click anywhere to continue)"."""
+    prompt = next((l for l in lines if fuzzy_in("click anywhere to continue", l.text, 0.75)), None)
+    if prompt is None:
+        return None
+    above = sorted((l for l in lines if l.y < prompt.y and prompt.y - l.y < 12 * prompt.h
+                    and abs(l.center_x - prompt.center_x) < prompt.w), key=lambda l: -l.y)
+
+    def rarity_of(line: OcrLine) -> str:
+        # Other text can run into it ("Legendary G" with a player name behind).
+        return next((w.capitalize() for w in re.findall(r"[a-z]+", line.text.lower())
+                     if w in RARITIES), "")
+    rarity_line = next((l for l in above if rarity_of(l)), None)
+    rarity = rarity_of(rarity_line) if rarity_line else ""
+    name = ""
+    if rarity_line is not None:
+        name_line = next((l for l in above if l.y < rarity_line.y - 0.5 * rarity_line.h), None)
+        name = name_line.text.strip() if name_line else ""
+    return name, rarity

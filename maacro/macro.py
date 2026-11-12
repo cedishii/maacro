@@ -236,6 +236,9 @@ class MacroThread(QThread):
                         self._sleep(1)
                         continue
                     self._watch_map(latest)
+                    if self._dismiss_drop(hwnd, latest):
+                        self._sleep(0.2)
+                        continue
                     if self._close_leaderboard(hwnd, latest):
                         self._sleep(0.2)
                         continue
@@ -265,6 +268,31 @@ class MacroThread(QThread):
         finally:
             inp.release_all()
             self.status.emit("Stopped")
+
+    def _dismiss_drop(self, hwnd: int, det: Detection | None) -> bool:
+        """Click away item drops ("Click anywhere to continue"). One to three
+        can come in a row, so keep clicking while the prompt is up. Returns
+        True if it clicked."""
+        if det is None or det.drop is None:
+            self._drop_clicks = 0
+            self._drop_seen = None
+            return False
+        if det.drop != getattr(self, "_drop_seen", None) and any(det.drop):
+            self._drop_seen = det.drop
+            name, rarity = det.drop
+            self.log.emit(f"Drop: {name or 'item'}{f' ({rarity})' if rarity else ''}", "Info")
+        if not self._cooldown("drop", 0.8):
+            return False
+        self._drop_clicks = getattr(self, "_drop_clicks", 0) + 1
+        if self._drop_clicks > 10:
+            if self._drop_clicks == 11:
+                self.log.emit("The drop popup won't go away — leaving it.", "Warn")
+            return False
+        # Top middle (the HUD bar): if the popup is already gone, a click
+        # there doesn't select a unit on the map.
+        width, height = self._frame_size()
+        inp.click(hwnd, width * 0.5, height * 0.12)
+        return True
 
     def _close_leaderboard(self, hwnd: int, det: Detection | None) -> bool:
         """Close the damage leaderboard if it opened (it covers the screen).
