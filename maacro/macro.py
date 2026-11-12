@@ -97,6 +97,7 @@ class MacroThread(QThread):
         self._maps: list[MapZones] = []
         self._map: MapZones | None = None     # current map, if the player saved zones for it
         self._map_warned = False
+        self._map_walked = False        # this match's map walk is done
         self._matchmaking_at = -1e9     # last time matchmaking / verification / match found showed
         self._upgrade_clicks = 0
         self._last_error = ""           # last crash logged by _report_error
@@ -290,6 +291,8 @@ class MacroThread(QThread):
         """Recognise the map from the loading screen or the match title, and
         load the player's placement zones for it."""
         screen = self.detector.tracker.screen
+        if screen in ("lobby", "match_found", "loading"):
+            self._map_walked = False    # back at the spawn: walk again next match
         if screen == "lobby":
             self._map, self._map_warned = None, False
             return
@@ -477,6 +480,15 @@ class MacroThread(QThread):
                 inp.press(hwnd, "o", hold=cfg.zoom_out_seconds)
                 self._sleep(0.5)
             return
+        # Not kept in MatchState: vote start resets that, and the walk must
+        # happen only once per match.
+        # If the map isn't recognised yet, keep checking until the first unit
+        # goes down (walking after that would leave placed units behind).
+        if cfg.place_units and m.pending and not self._map_walked and (self._map is not None or m.placed):
+            self._map_walked = True
+            if self._map is not None and self._map.walk:
+                self._walk_map(hwnd, self._map.walk)
+                return
         if cfg.place_units and m.pending:
             self._place_next(hwnd)
         elif cfg.upgrade_units and not m.upgrades_done:
@@ -490,6 +502,30 @@ class MacroThread(QThread):
             det = self.detector.latest
             yen = f" — {det.yen}¥" if det is not None and det.yen is not None else ""
             self._say((f"In match — wave {wave}" if wave else "In match") + yen, log=False)
+
+    def _walk_map(self, hwnd: int, walk: dict) -> None:
+        """Walk to the spot the map's zones were drawn from: hold the key for
+        `seconds`, tapping Space now and then if `jump` is set."""
+        key = str(walk.get("key", "d")).lower()
+        seconds = float(walk.get("seconds", 4.0))
+        jump = bool(walk.get("jump", False))
+        self._say(f"Walking to the {self._map.name} spot ({key.upper()} for {seconds:g}s"
+                  f"{' + jumping' if jump else ''})")
+        inp.focus(hwnd)
+        inp.key_down(key)
+        try:
+            end = time.monotonic() + seconds
+            while time.monotonic() < end and not self.isInterruptionRequested():
+                if jump:
+                    inp.key_down("space")
+                    self.msleep(60)
+                    inp.key_up("space")
+                    self.msleep(190)
+                else:
+                    self.msleep(50)
+        finally:
+            inp.key_up(key)
+        self._sleep(0.6)    # let the camera settle before reading the screen
 
     def _unit_label(self, key: str) -> str:
         name = self.settings.unit_names.get(key, "").strip()

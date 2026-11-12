@@ -37,6 +37,9 @@ class MapZones:
     zones: list[list[tuple[int, int]]]      # polygons, in screenshot pixels
     anchor: tuple[float, float, float]      # map-name text in the screenshot: centre x, centre y, width
     size: tuple[int, int]                   # screenshot width, height
+    # Optional walk at the start of a match, before placing — the zones are
+    # drawn from where it ends. {"key": "d", "seconds": 4.0, "jump": true}
+    walk: dict | None = None
 
     # --- matching the live screen ---------------------------------------
     def matches(self, text: str) -> bool:
@@ -126,9 +129,11 @@ def _fill_outline(stroke: np.ndarray, width: int, height: int) -> list[tuple[int
     return [(int(px), int(py)) for px, py in hull]
 
 
-def create_map(name: str, screenshot: Path, ocr: OcrReader | None = None) -> MapZones:
+def create_map(name: str, screenshot: Path, ocr: OcrReader | None = None,
+               walk: dict | None = None) -> MapZones:
     """Save a map from a screenshot with white circles. Raises ValueError with a
-    message for the player if something's missing."""
+    message for the player if something's missing. `walk` (see MapZones) is
+    the walk done before placing; if not given, a saved one is kept."""
     image = cv2.imread(str(screenshot))
     if image is None:
         raise ValueError(f"Couldn't open {screenshot}.")
@@ -140,15 +145,20 @@ def create_map(name: str, screenshot: Path, ocr: OcrReader | None = None) -> Map
     if anchor is None:
         raise ValueError(f"Couldn't find the map name '{name}' at the top of the screenshot. "
                          "Include the map title in the screenshot and check the spelling.")
-    zones_map = MapZones(name, zones, anchor, (image.shape[1], image.shape[0]))
-    MAPS_DIR.mkdir(exist_ok=True)
     slug = slugify(name)
+    if walk is None:
+        try:
+            walk = json.loads((MAPS_DIR / f"{slug}.json").read_text(encoding="utf-8")).get("walk")
+        except (OSError, ValueError):
+            walk = None
+    zones_map = MapZones(name, zones, anchor, (image.shape[1], image.shape[0]), walk)
+    MAPS_DIR.mkdir(exist_ok=True)
     source = MAPS_DIR / f"{slug}_source.png"
     if Path(screenshot).resolve() != source.resolve():
         shutil.copyfile(screenshot, source)
     (MAPS_DIR / f"{slug}.json").write_text(json.dumps({
         "name": name, "zones": zones, "anchor": list(anchor), "size": list(zones_map.size),
-        "source": source.name,
+        "source": source.name, **({"walk": walk} if walk else {}),
     }, indent=2), encoding="utf-8")
     return zones_map
 
@@ -159,7 +169,8 @@ def load_maps() -> list[MapZones]:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             maps.append(MapZones(data["name"], [[tuple(p) for p in z] for z in data["zones"]],
-                                 tuple(data["anchor"]), tuple(data["size"])))
+                                 tuple(data["anchor"]), tuple(data["size"]),
+                                 data.get("walk")))
         except (OSError, ValueError, KeyError):
             continue
     return maps
