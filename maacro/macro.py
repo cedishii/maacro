@@ -60,6 +60,7 @@ def narrow_to_words(line: OcrLine, keyword: str) -> OcrLine:
 
 
 UPGRADE_RECHECK = 40     # seconds before looking at a "maxed" manager again
+MISSES_BEFORE_NEXT = 4   # placing passes without luck before trying the next unit
 WALK_MAX_WAVE = 3        # later than this, the match is under way: don't walk
 
 
@@ -79,6 +80,7 @@ class MatchState:
     maxed_logged: bool = False
     no_upgrade_reads: int = 0
     close_tries: int = 0            # F presses to close a manager that's in the way
+    misses: dict[str, int] = field(default_factory=dict)  # passes in a row without placing, per key
     card_voted: bool = False
     card_clicked: bool = False
     vote_target: tuple[float, float] | None = None
@@ -770,12 +772,18 @@ class MacroThread(QThread):
         tolerance = 0.04 * frame_h
         order = [(x, y) for x, y in order
                  if all(math.hypot(x - fx, y - fy) > tolerance for fx, fy in m.failed_spots)]
+        if not order and m.failed_spots:
+            # Every spot has failed once: they may be free now (or the money
+            # came in), so start over rather than clicking nothing.
+            m.failed_spots.clear()
         tries = order[:SPOTS_PER_TRY]
         m.spot_cursor += max(0, len(tries) - len(zone) - len(near) - len(ground))
         # If the counter didn't read when the key was pressed, there's nothing
         # to compare against and a placement (0/2 → 1/2) would go unnoticed.
         # MAACRO places from the start of the match, so unread means none yet.
         m.counts.setdefault(key, 0)
+        placed_before_pass = m.placed
+        waiting_for_money = False
         for x, y in tries:
             if self.isInterruptionRequested() or key not in m.pending or self._card_pick_up():
                 break
@@ -788,6 +796,7 @@ class MacroThread(QThread):
                 break   # a card pick or the end screen came up
             if det is not None and det.no_money:
                 self._say(f"Waiting for money for {label}", log=False)
+                waiting_for_money = True
                 break
             if count is not None:
                 placed_before = m.placed
@@ -803,6 +812,18 @@ class MacroThread(QThread):
                 break
         # Leave placement mode; the next pass continues with whatever is left.
         inp.press(hwnd, "q")
+        if m.placed > placed_before_pass or waiting_for_money:
+            m.misses.pop(key, None)
+        elif tries:
+            m.misses[key] = m.misses.get(key, 0) + 1
+            # One unit that won't go down (no room for it, wrong spots) mustn't
+            # hold up the rest: send it to the back of the queue.
+            if m.misses[key] >= MISSES_BEFORE_NEXT and any(k != key for k in m.pending):
+                m.misses[key] = 0
+                count_left = m.pending.count(key)
+                m.pending = [k for k in m.pending if k != key] + [key] * count_left
+                self.log.emit(f"{label} didn't go down after {MISSES_BEFORE_NEXT} tries — "
+                              "placing the other units first.", "Info")
 
     def _frame_size(self) -> tuple[int, int]:
         _, frame = self.capture.latest_frame()
