@@ -45,6 +45,14 @@ class Card:
         return any(word in text for word in ("golem", "wishingstar", "starfallcard"))
 
     @property
+    def debuff_amount(self) -> int | None:
+        """The biggest "+N Enemy …" number on the card (e.g. +50 Enemy
+        Physical Resist → 50), or None if none was read. OCR often garbles
+        "Enemy" ("Enerm", "Ene7"), so any word starting with "en" counts."""
+        found = [int(n) for n in DEBUFF_RE.findall(self.text)]
+        return max(found) if found else None
+
+    @property
     def debuff_rank(self) -> int:
         """Lower = milder debuff, per the player: Enemy Health, then Physical
         Resist only, then anything else (magic resist, both resists, regen…)."""
@@ -123,6 +131,7 @@ def find_cards(frame: np.ndarray, lines: list[OcrLine]) -> list[Card]:
     return cards
 
 
+DEBUFF_RE = re.compile(r"(\d{1,3})\s*%?\s*en", re.IGNORECASE)
 PEARLS_RE = re.compile(r"(\d{1,3})\s*%\s*summ", re.IGNORECASE)
 
 
@@ -134,7 +143,9 @@ def read_card_texts(cards: list[Card], lines: list[OcrLine]) -> None:
         own.sort(key=lambda l: l.y)
         card.text = " ".join(l.text for l in own)
         match = PEARLS_RE.search(card.text)
-        card.pearls = int(match.group(1)) if match else None
+        # No card gives under 10%: a smaller number is a cut-off read (the
+        # chat hiding the "7" of "70%"), so it counts as unread.
+        card.pearls = int(match.group(1)) if match and int(match.group(1)) >= 10 else None
 
 
 def read_votes(frame: np.ndarray, cards: list[Card], reader: NumberReader) -> None:
@@ -148,8 +159,16 @@ def needs_votes(cards: list[Card]) -> bool:
     pearls and debuff (call read_card_texts first). Skipping them saves time."""
     if not cards or any(c.color != "red" for c in cards):
         return False
-    keys = sorted((c.pearls if c.pearls is not None else 999, c.debuff_rank) for c in cards)
+    keys = sorted(_mildness(c) for c in cards)
     return len(keys) > 1 and keys[0] == keys[1]
+
+
+def _mildness(card: Card) -> tuple[int, int, int]:
+    """Lower = milder red card: the smallest SummerPearls bonus, then the
+    mildest debuff kind, then the smallest "+N Enemy …" number."""
+    pearls = card.pearls if card.pearls is not None else 999
+    amount = card.debuff_amount if card.debuff_amount is not None else 999
+    return pearls, card.debuff_rank, amount
 
 
 def choose_card(cards: list[Card]) -> tuple[Card, str] | None:
@@ -166,12 +185,11 @@ def choose_card(cards: list[Card]) -> tuple[Card, str] | None:
         if special:
             return special[0], label
     # 2. All red: the smallest SummerPearls bonus (bigger bonus = bigger debuff),
-    #    then the mildest debuff (Enemy Health, then Physical Resist), then the
-    #    most votes, then the leftmost.
+    #    then the mildest kind (Enemy Health, then Physical Resist), then the
+    #    smallest "+N Enemy …" number, then the most votes, then the leftmost.
     if any(c.pearls is not None or c.text for c in cards):
         def rank(c: Card):
-            return (c.pearls if c.pearls is not None else 999, c.debuff_rank,
-                    -(c.votes or 0), c.index)
+            return (*_mildness(c), -(c.votes or 0), c.index)
         best = min(cards, key=rank)
         name = best.text.split("+")[0].strip(" •-") or f"card {best.index + 1}"
         pearls = f"+{best.pearls}% pearls" if best.pearls is not None else "pearls unread"
