@@ -113,12 +113,13 @@ def extract_zones(image: np.ndarray) -> list[list[tuple[int, int]]]:
     """The areas circled in white: big white strokes, each filled in."""
     height, width = image.shape[:2]
     white = ((image[..., 0] > 235) & (image[..., 1] > 235) & (image[..., 2] > 235)).astype(np.uint8)
+    white[:titlebar_height(image)] = 0      # the window's own title bar isn't a drawing
     count, labels, stats, _ = cv2.connectedComponentsWithStats(white)
     zones = []
     for i in range(1, count):
         x, y, w, h, _ = stats[i]
         # Hand-drawn outlines are big in both directions; text and edges aren't.
-        if (w > 0.12 * width or h > 0.12 * height) and w > 0.05 * width and h > 0.05 * height:
+        if (w > 0.07 * width or h > 0.07 * height) and w > 0.04 * width and h > 0.04 * height:
             zones.append(_fill_outline((labels == i).astype(np.uint8), width, height))
     return zones
 
@@ -128,7 +129,9 @@ def extract_avoid(image: np.ndarray) -> list[list[tuple[int, int]]]:
     Small red bits (lamps, effects) are left out."""
     height, width = image.shape[:2]
     b, g, r = (image[..., i].astype(np.int16) for i in range(3))
-    red = ((r > 190) & (g < 70) & (b < 80)).astype(np.uint8)
+    # The drawing pen's red is about RGB(230, 27, 27); game reds (text, unit
+    # rings) are purer, with blue and green near 0, so they're left out.
+    red = ((r > 205) & (r < 245) & (g > 12) & (g < 50) & (b > 12) & (b < 50)).astype(np.uint8)
     # Scribbles are loose strokes: join them up before measuring.
     red = cv2.dilate(red, np.ones((9, 9), np.uint8))
     count, labels, stats, _ = cv2.connectedComponentsWithStats(red)
