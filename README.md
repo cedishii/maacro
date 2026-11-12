@@ -26,13 +26,7 @@ Keep Roblox open (it can be behind other windows, but not minimized).
 - `maacro/detector.py` — background thread tying capture + detection together
 - `maacro/stats.py` — wins, losses, win rate, session time
 - `maacro/ui/` — the window, pages and theme
-- `FLOW.md` — how one run works, step by step; `screens/` — reference screenshots
-
-## Tests
-
-```
-.venv\Scripts\python -m unittest discover tests -v
-```
+- `FLOW.md` — how one run works, step by step
 
 ## Progress
 

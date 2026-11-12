@@ -7,3 +7,8 @@ dist/
 config.json
 logs/
 runs/
+
+# Local only: screenshots and the tests that read them
+screens/
+tests/
+maps/*_source.png
