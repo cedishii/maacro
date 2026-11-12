@@ -23,7 +23,7 @@ from .control import input as inp
 from .detector import DetectorThread
 from .maps import MapZones, find_map, load_maps, spread
 from .runs import read_run, save_run
-from .placement import find_green_buttons, placeable_spots, spots_to_try, upgrade_order
+from .placement import drop_red_spots, find_green_buttons, placeable_spots, spots_to_try, upgrade_order
 
 SPOTS_PER_TRY = 12      # then give up for now, so card picks etc. aren't blocked
 from .vision.cards import (choose_card, find_cards, needs_votes, predicted_vote_button, read_card_texts,
@@ -327,9 +327,35 @@ class MacroThread(QThread):
             play = OcrLine("Play", int(items.x + store.center_x - units.center_x), items.y, items.w, items.h)
         self._say("In lobby → clicking Play")
         self._click_line(hwnd, play, "Play")
-        if not self._sleep(self.settings.teleport_wait):
+        clicked_at = time.monotonic()
+        # Only walk once the lobby menu is gone: if the click missed (often the
+        # first click just brings Roblox to the front), walking would only run
+        # around the lobby. Try again shortly instead.
+        if not self._left_lobby(clicked_at, timeout=self.settings.teleport_wait + 3):
+            if not self.isInterruptionRequested():
+                self.log.emit("Play click didn't register — clicking again.", "Warn")
+                self._last_done["play"] = time.monotonic() - 12 + 1.5   # retry in 1.5 s
+            return
+        if not self._sleep(max(0.0, self.settings.teleport_wait - (time.monotonic() - clicked_at))):
             return
         self._walk_to_ring(hwnd)
+
+    def _left_lobby(self, after: float, timeout: float) -> bool:
+        """True once two reads of frames taken after `after` aren't the lobby
+        (two, so one bad text read doesn't count as leaving)."""
+        end = time.monotonic() + timeout
+        seen, misses = -1, 0
+        while time.monotonic() < end:
+            if self.isInterruptionRequested():
+                return False
+            count, det = self.detector.latest_count, self.detector.latest
+            if count != seen and det is not None and self.detector.latest_time > after + 0.12:
+                seen = count
+                misses = misses + 1 if det.screen != "lobby" else 0
+                if misses >= 2:
+                    return True
+            self.msleep(30)
+        return False
 
     def _walk_to_ring(self, hwnd: int) -> None:
         self._say("Walking to matchmaking")
@@ -372,7 +398,7 @@ class MacroThread(QThread):
         time.sleep(1)
 
         screenshot = pyautogui.screenshot(
-            region=(485, 350, 570, 270)
+           region = (470, 335, 600, 300)
         )
 
         number = read_number(image=screenshot)
@@ -390,7 +416,15 @@ class MacroThread(QThread):
 
         time.sleep(0.2)
 
-        pyautogui.click(650, 535)
+        for pos in [
+            (645, 532),
+            (655, 532),
+            (650, 535),
+            (645, 538),
+            (655, 538),
+        ]:
+            pyautogui.click(*pos)
+            time.sleep(0.2)
 
         self._say("Submitted")
 
@@ -502,7 +536,7 @@ class MacroThread(QThread):
 
     def _place_next(self, hwnd: int) -> None:
         m = self.match
-        if not self._cooldown("place", 1.5):
+        if not self._cooldown("place", 0.8):
             return
         key = m.pending[0]
         label = self._unit_label(key)
@@ -541,9 +575,15 @@ class MacroThread(QThread):
         # The player's zones for this map come first (next to placed units first).
         zone = []
         if self._map is not None and self.detector.latest is not None:
-            zone = spread(self._map.spots(self.detector.latest.lines, frame_w, frame_h),
-                          m.spots, 0.04 * frame_h)
-            if not zone and self._cooldown("zone_fit_log", 30):
+            all_zone = spread(self._map.spots(self.detector.latest.lines, frame_w, frame_h),
+                              m.spots, 0.04 * frame_h)
+            # Other players' units often already fill part of a zone (around
+            # the spawn especially): the game paints those spots red, so skip
+            # them without clicking.
+            zone = drop_red_spots(frame, all_zone) if frame is not None else all_zone
+            if all_zone and not zone and self._cooldown("zone_full_log", 30):
+                self.log.emit(f"The {self._map.name} zones look full — trying other spots.", "Info")
+            if not all_zone and self._cooldown("zone_fit_log", 30):
                 self.log.emit(f"Couldn't line up the {self._map.name} zones with the screen "
                               "(map title not read) — using automatic spots.", "Warn")
         ground = placeable_spots(frame) if frame is not None else []

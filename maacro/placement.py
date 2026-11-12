@@ -95,6 +95,32 @@ def placeable_spots(frame: np.ndarray, limit: int = 30) -> list[tuple[float, flo
     return picked
 
 
+def red_mask(frame: np.ndarray) -> np.ndarray:
+    """Where the game paints 'can't place here' red (roofs, the road, and the
+    discs under units that are already placed). Same rule as placeable_spots."""
+    b, g, r = (frame[..., i].astype(np.int16) for i in range(3))
+    return (r > g + 50) & (r > b + 50)
+
+
+def drop_red_spots(frame: np.ndarray, spots: list[tuple[float, float]],
+                   radius_fraction: float = 0.02, max_red: float = 0.4) -> list[tuple[float, float]]:
+    """Keep only the spots that aren't mostly red in a frame taken *in placement
+    mode*, so taken or blocked spots are skipped without spending a click."""
+    if not spots:
+        return []
+    height, width = frame.shape[:2]
+    red = red_mask(frame[:, :, :3])
+    r = max(3, int(radius_fraction * height))
+    kept = []
+    for x, y in spots:
+        x0, x1 = max(0, int(x) - r), min(width, int(x) + r + 1)
+        y0, y1 = max(0, int(y) - r), min(height, int(y) + r + 1)
+        window = red[y0:y1, x0:x1]
+        if window.size and window.mean() <= max_red:
+            kept.append((x, y))
+    return kept
+
+
 def path_spots(frame: np.ndarray, limit: int = 40) -> list[tuple[float, float]]:
     """Spots on the ground just beside the enemy path (bright red), nearest the
     middle first. Units are easiest to place there.

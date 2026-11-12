@@ -40,7 +40,8 @@ class MapZones:
 
     # --- matching the live screen ---------------------------------------
     def matches(self, text: str) -> bool:
-        return fuzzy_in(self.name, text, 0.8)
+        # 0.75 like name_box: the stylised title reads as e.g. "Rain Mtlage".
+        return fuzzy_in(self.name, text, 0.75)
 
     def transform(self, lines: list[OcrLine], frame_w: int, frame_h: int):
         """(scale, dx, dy) mapping screenshot pixels onto the live frame, from
