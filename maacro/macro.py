@@ -1089,6 +1089,17 @@ class MacroThread(QThread):
             return
         button = self._line(det, "return to lobby")
         if button is None:
+            # The button's text isn't always read (it once stayed unread for
+            # hours with the unit manager open). It sits above "Waiting for
+            # Players", left of its centre (Replay is to the right).
+            waiting = self._line(det, "waiting for players")
+            if waiting is None:
+                return
+            x = waiting.center_x - 0.29 * waiting.w
+            y = waiting.y - 0.125 * waiting.w
+            self._say("Returning to lobby (button text not read — using its usual spot)")
+            self.log.emit("Clicking Return to lobby", "Info")
+            inp.click(hwnd, x, y)
             return
         self._say("Returning to lobby")
         self._click_line(hwnd, button, "Return to lobby")
