@@ -1,0 +1,690 @@
+"""The run loop: looks at the current screen and does the next step.
+
+Lobby → Play → walk into the ring → Find Match → (captcha: player's turn)
+→ vote Yes → match (place units → upgrade to Max, pick cards) → Next
+→ Return to lobby → repeat.
+"""
+from __future__ import annotations
+
+import math
+import time
+import pyautogui
+import winsound
+from dataclasses import dataclass, field
+from difflib import SequenceMatcher
+from screen_numbers import read_number, type_text
+from PySide6.QtCore import QThread, Signal
+
+from .capture import CaptureThread
+from .config import MacroConfig
+from .control import input as inp
+from .detector import DetectorThread
+from .maps import MapZones, find_map, load_maps, spread
+from .runs import read_run, save_run
+from .placement import find_green_buttons, placeable_spots, spots_to_try, upgrade_order
+
+SPOTS_PER_TRY = 12      # then give up for now, so card picks etc. aren't blocked
+from .vision.cards import (choose_card, find_cards, needs_votes, predicted_vote_button, read_card_texts,
+                           read_votes, vote_button)
+from .vision.numbers import GuardedNumberReader, make_number_reader
+from .vision.hotbar import read_unit_count
+from .vision.ocr import OcrLine, OcrReader
+from .vision.screens import Detection, _norm, fuzzy_in
+
+# Seeing one of these means a new match is coming: start its plan fresh.
+NEW_MATCH_SCREENS = {"lobby", "match_found", "loading", "vote_start"}
+
+
+def narrow_to_words(line: OcrLine, keyword: str) -> OcrLine:
+    """The part of `line` whose words best match `keyword`."""
+    n = len(keyword.split())
+    if not line.words or len(line.words) <= n:
+        return line
+    key = _norm(keyword)
+    best, best_ratio = None, -1.0
+    for start in range(len(line.words) - n + 1):
+        window = line.words[start:start + n]
+        ratio = SequenceMatcher(None, key, _norm("".join(w.text for w in window))).ratio()
+        if ratio > best_ratio:
+            best, best_ratio = window, ratio
+    left = min(w.x for w in best)
+    top = min(w.y for w in best)
+    right = max(w.x + w.w for w in best)
+    bottom = max(w.y + w.h for w in best)
+    return OcrLine(" ".join(w.text for w in best), left, top, right - left, bottom - top, best)
+
+
+@dataclass
+class MatchState:
+    """What's been done in the current match."""
+    pending: list[str] = field(default_factory=list)    # hotbar keys still to place
+    placed: int = 0
+    failures: dict[str, int] = field(default_factory=dict)
+    counts: dict[str, int] = field(default_factory=dict)  # last placed-count read per key
+    failed_spots: list[tuple[float, float]] = field(default_factory=list)
+    zoomed: bool = False
+    spots: list[tuple[float, float]] = field(default_factory=list)
+    spot_cursor: int = 0            # where the next placing try continues in the spot list
+    upgrades_done: bool = False
+    no_upgrade_reads: int = 0
+    card_voted: bool = False
+    card_clicked: bool = False
+    vote_target: tuple[float, float] | None = None
+    recorded: bool = False          # this run's rewards are noted
+    card_seen_at: float = 0.0       # when the current card pick appeared
+    voted_start: bool = False
+
+
+class MacroThread(QThread):
+    status = Signal(str)            # what the macro is doing right now
+    log = Signal(str, str)          # message, level
+    run_recorded = Signal(object)   # RunRecord, when a run ends
+
+    def __init__(self, capture: CaptureThread, detector: DetectorThread,
+                 settings: MacroConfig | None = None, parent=None):
+        super().__init__(parent)
+        self.capture = capture
+        self.detector = detector
+        self.settings = settings or MacroConfig()
+        self.numbers: GuardedNumberReader | None = None
+        self._ocr: OcrReader | None = None      # for the hotbar counter (this thread's own)
+        self.match = MatchState()
+        self._last_done: dict[str, float] = {}
+        self._status = ""
+        self._screen = "unknown"
+        self._manager_seen_at = 0.0     # last time any read showed the unit manager
+        self._maps: list[MapZones] = []
+        self._map: MapZones | None = None     # current map, if the player saved zones for it
+        self._map_warned = False
+        self._matchmaking_at = -1e9     # last time matchmaking / verification / match found showed
+        self._upgrade_clicks = 0
+
+    # --- helpers -------------------------------------------------------
+    def _say(self, status: str, log: bool = True, level: str = "Info") -> None:
+        if status != self._status:
+            self._status = status
+            self.status.emit(status)
+            if log:
+                self.log.emit(status, level)
+
+    def _cooldown(self, key: str, seconds: float) -> bool:
+        """True (and starts the timer) if `key` wasn't done in the last `seconds`."""
+        now = time.monotonic()
+        if now - self._last_done.get(key, -1e9) < seconds:
+            return False
+        self._last_done[key] = now
+        return True
+
+    def _sleep(self, seconds: float) -> bool:
+        """Sleep, but wake early if stopped. Returns False if stopped."""
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            if self.isInterruptionRequested():
+                return False
+            self.msleep(30)
+        return True
+
+    def _fresh(self, screen: str) -> Detection | None:
+        """Latest detection, only if it agrees with the steady screen."""
+        det = self.detector.latest
+        if det is not None and det.screen == screen:
+            return det
+        return None
+
+    @staticmethod
+    def _line(det: Detection, keyword: str, exact: bool = False, threshold: float = 0.8) -> OcrLine | None:
+        """Find `keyword` on screen. Returns just the matching words, not the
+        whole line — e.g. "Find Match" out of "Play Here Find Match"."""
+        key = _norm(keyword)
+        if exact:
+            matches = [l for l in det.lines if _norm(l.text) == key]
+        else:
+            # Exact text first, so "find match" never lands on "Join Matchmaking?".
+            matches = [l for l in det.lines if key in _norm(l.text)] or \
+                      [l for l in det.lines if fuzzy_in(keyword, l.text, threshold)]
+        return narrow_to_words(matches[0], keyword) if matches else None
+
+    def _click_line(self, hwnd: int, line: OcrLine, what: str) -> None:
+        self.log.emit(f"Clicking {what}", "Info")
+        inp.click(hwnd, line.x + line.w / 2, line.y + line.h / 2)
+
+    # --- main loop -----------------------------------------------------
+    def _new_match(self) -> None:
+        self.match = MatchState(pending=list(self.settings.placement_order))
+
+    def _wait_fresh(self, reads: int = 2, timeout: float = 2.0) -> Detection | None:
+        """Wait for `reads` new detections (so they show the screen *after* an action)."""
+        target = self.detector.latest_count + reads
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if self.isInterruptionRequested():
+                return None
+            if self.detector.latest_count >= target:
+                return self.detector.latest
+            self.msleep(30)
+        return self.detector.latest
+
+    def _wait_after(self, moment: float, timeout: float = 2.0) -> Detection | None:
+        """Wait for a detection of a frame captured after `moment` (+ time for the game to react)."""
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if self.isInterruptionRequested():
+                return None
+            if self.detector.latest_time > moment + 0.12:
+                return self.detector.latest
+            self.msleep(20)
+        return self.detector.latest
+
+    def run(self) -> None:
+        self.log.emit("Run loop started. Press F3 to stop.", "Info")
+        if self.numbers is None:
+            self.numbers = make_number_reader(lambda: self.detector.tracker.screen,
+                                              log=self.log.emit)
+        if self._ocr is None:
+            self._ocr = OcrReader()
+        self._new_match()
+        self._maps = load_maps()
+        self._map = None
+        if self._maps:
+            self.log.emit(f"Placement zones saved for: {', '.join(m.name for m in self._maps)}.", "Info")
+        wave = self.detector.tracker.wave
+        if (self.settings.skip_placing_mid_match and wave and wave >= 2
+                and self.detector.tracker.screen in ("in_match", "unit_manager", "card_pick")):
+            self.match.pending = []
+            self.log.emit(f"Started mid-match (wave {wave}): assuming units are already "
+                          "placed, so only upgrading and picking cards.", "Info")
+        try:
+            while not self.isInterruptionRequested():
+                latest = self.detector.latest
+                if latest is not None and latest.screen == "unit_manager":
+                    self._manager_seen_at = time.monotonic()
+                if self.detector.tracker.screen in ("captcha", "match_found"):
+                    self._matchmaking_at = time.monotonic()
+                elif self.detector.tracker.screen in ("in_match", "vote_start"):
+                    self._matchmaking_at = -1e9
+                hwnd = self.capture.hwnd
+                if not hwnd:
+                    self._say("Waiting for Roblox…")
+                    self._sleep(1)
+                    continue
+                self._watch_map(latest)
+                if self._close_leaderboard(hwnd, latest):
+                    self._sleep(0.2)
+                    continue
+                screen = self.detector.tracker.screen
+                # A card pick is time-limited: act on the first read of it
+                # instead of waiting for it to be confirmed.
+                if latest is not None and latest.screen == "card_pick":
+                    screen = "card_pick"
+                if screen != self._screen:
+                    if screen in NEW_MATCH_SCREENS:
+                        self._new_match()
+                    if self._screen == "card_pick":
+                        self.match.card_voted = self.match.card_clicked = False
+                    if screen == "card_pick":
+                        self.match.card_seen_at = time.monotonic()
+                    self._screen = screen
+                handler = getattr(self, f"_on_{screen}", None)
+                if handler:
+                    handler(hwnd)
+                self._sleep(0.2)
+        finally:
+            inp.release_all()
+            self.status.emit("Stopped")
+
+    def _close_leaderboard(self, hwnd: int, det: Detection | None) -> bool:
+        """Close the damage leaderboard if it opened (it covers the screen).
+        Returns True if it clicked."""
+        if det is None or det.leaderboard_close is None:
+            self._leaderboard_tries = 0
+            return False
+        if not self._cooldown("leaderboard", 2.0):
+            return False
+        self._leaderboard_tries = getattr(self, "_leaderboard_tries", 0) + 1
+        if self._leaderboard_tries > 4:
+            if self._leaderboard_tries == 5:
+                self.log.emit("The leaderboard won't close — leaving it open.", "Warn")
+            return False
+        self.log.emit("Closing the leaderboard.", "Info")
+        inp.click(hwnd, *det.leaderboard_close)
+        self._park_mouse(hwnd)
+        return True
+
+    def _card_pick_up(self) -> bool:
+        """True as soon as a card pick is on screen (so placing/upgrading stop)."""
+        det = self.detector.latest
+        return det is not None and det.screen == "card_pick"
+
+    def _watch_map(self, det: Detection | None) -> None:
+        """Recognise the map from the loading screen or the match title, and
+        load the player's placement zones for it."""
+        screen = self.detector.tracker.screen
+        if screen == "lobby":
+            self._map, self._map_warned = None, False
+            return
+        if det is None or self._map is not None or screen not in ("loading", "vote_start", "in_match"):
+            return
+        found = find_map(self._maps, det.lines)
+        if found is not None:
+            self._map = found
+            self.log.emit(f"Map: {found.name} — placement zones loaded.", "Info")
+        elif screen == "in_match" and det.map_name and not getattr(self, "_map_warned", False):
+            self._map_warned = True
+            self.log.emit(f"Map '{det.map_name}': no placement zones saved yet "
+                          "(using automatic spots).", "Info")
+
+    # --- one handler per screen ----------------------------------------
+    def _on_lobby(self, hwnd: int) -> None:
+        # After the verification / "Match found", the lobby shows again for a
+        # few seconds before the teleport: don't click Play then.
+        if time.monotonic() - self._matchmaking_at < 30:
+            self._say("Matchmaking — waiting for the teleport")
+            return
+        det = self._fresh("lobby")
+        if det is None or not self._cooldown("play", 12):
+            return
+        play = self._line(det, "play", exact=True)
+        if play is None:
+            # Fall back to the menu layout: Play sits right of Items, like Store sits right of Units.
+            items = self._line(det, "items", exact=True)
+            units = self._line(det, "units", exact=True)
+            store = self._line(det, "store", exact=True)
+            if not (items and units and store):
+                self._say("In lobby — can't find the Play button", level="Warn")
+                return
+            play = OcrLine("Play", int(items.x + store.center_x - units.center_x), items.y, items.w, items.h)
+        self._say("In lobby → clicking Play")
+        self._click_line(hwnd, play, "Play")
+        if not self._sleep(self.settings.teleport_wait):
+            return
+        self._walk_to_ring(hwnd)
+
+    def _walk_to_ring(self, hwnd: int) -> None:
+        self._say("Walking to matchmaking")
+        start_count = self.detector.latest_count
+        inp.focus(hwnd)
+        sprint = self.settings.walk_sprint
+        if sprint:
+            inp.key_down("shift")       # run instead of walk
+        inp.key_down(self.settings.walk_key)
+        try:
+            end = time.monotonic() + self.settings.walk_timeout
+            while time.monotonic() < end:
+                if self.isInterruptionRequested():
+                    return
+                det = self.detector.latest
+                if (self.detector.latest_count > start_count and det is not None
+                        and det.screen in ("join_matchmaking", "captcha")):
+                    self.log.emit("Reached the matchmaking ring", "Info")
+                    return
+                self.msleep(30)
+            self.log.emit("Didn't reach the ring in time — will try again", "Warn")
+        finally:
+            inp.key_up(self.settings.walk_key)
+            if sprint:
+                inp.key_up("shift")
+
+
+    def _on_join_matchmaking(self, hwnd: int) -> None:
+        det = self._fresh("join_matchmaking")
+        if det is None or not self._cooldown("find_match", 4):
+            return
+
+        button = self._line(det, "find match")
+        if button is None:
+            return
+
+        self._say("Joining matchmaking")
+        self._click_line(hwnd, button, "Find Match")
+
+        time.sleep(1)
+
+        screenshot = pyautogui.screenshot(
+            region=(485, 350, 570, 270)
+        )
+
+        number = read_number(image=screenshot)
+
+        if not number:
+            self._say("Failed to read number")
+            return
+
+        self._say(f"Read number: {number}")
+
+        type_text(
+            number,
+            click_at=(770, 470)
+        )
+
+        time.sleep(0.2)
+
+        pyautogui.click(650, 535)
+
+        self._say("Submitted")
+
+    def _on_match_found(self, hwnd: int) -> None:
+        self._say("Match found — teleporting")
+
+    def _on_loading(self, hwnd: int) -> None:
+        self._say("Loading…")
+
+    def _on_vote_start(self, hwnd: int) -> None:
+        if not self.settings.auto_vote_start:
+            self._say("Vote start — waiting for the countdown")
+            return
+        det = self._fresh("vote_start")
+        if det is None:
+            return
+        yes = self._line(det, "yes", exact=True)
+        if yes is not None and not self.match.voted_start and self._cooldown("vote_yes", 6):
+            self._say("Vote start — voting Yes")
+            self._click_line(hwnd, yes, "Yes")
+            self.match.voted_start = True
+        else:
+            self._say("Vote start — waiting for the countdown")
+
+    # --- in the match: place → upgrade → watch -------------------------
+    def _on_in_match(self, hwnd: int) -> None:
+        m, cfg = self.match, self.settings
+        if cfg.place_units and m.pending and not m.zoomed:
+            m.zoomed = True
+            if cfg.zoom_out_seconds > 0:
+                self._say("Zooming out (O)")
+                inp.press(hwnd, "o", hold=cfg.zoom_out_seconds)
+                self._sleep(0.5)
+            return
+        if cfg.place_units and m.pending:
+            self._place_next(hwnd)
+        elif cfg.upgrade_units and not m.upgrades_done:
+            # F toggles the manager, so don't press it if the manager was on
+            # screen a moment ago (detection can flicker while it's open).
+            if time.monotonic() - self._manager_seen_at > 6 and self._cooldown("open_manager", 6):
+                self._say("Opening the unit manager to upgrade")
+                inp.press(hwnd, "f")
+        else:
+            wave = self.detector.tracker.wave
+            det = self.detector.latest
+            yen = f" — {det.yen}¥" if det is not None and det.yen is not None else ""
+            self._say((f"In match — wave {wave}" if wave else "In match") + yen, log=False)
+
+    def _unit_label(self, key: str) -> str:
+        name = self.settings.unit_names.get(key, "").strip()
+        return f"key {key}" + (f" ({name})" if name else "")
+
+    def _read_count(self, after: float, slot: int | None = None, attempts: int = 4, timeout: float = 1.2) -> tuple[int, int] | None:
+        """The hotbar placed/total counter, from frames captured after `after`.
+
+        Banners ("Wave Completed!") and money pop-ups float over the counter
+        now and then, so several frames are tried.
+        """
+        end = time.monotonic() + timeout
+        last_id = -1
+        while time.monotonic() < end and attempts > 0 and not self.isInterruptionRequested():
+            frame_id, frame, frame_time = self.capture.latest_frame_info()
+            if frame is not None and frame_time > after and frame_id != last_id:
+                last_id = frame_id
+                attempts -= 1
+                count = read_unit_count(frame, self._ocr, slot)
+                if count is not None:
+                    return count
+            self.msleep(20)
+        return None
+
+    def _park_mouse(self, hwnd: int) -> None:
+        """Move the mouse to the top of the map, so the Place/Rotate/Cancel
+        menu (which follows the mouse) doesn't cover the hotbar counter."""
+        width, height = self._frame_size()
+        inp.move_to(hwnd, width * 0.5, height * 0.22)
+
+    def _in_placement_mode(self, after: float, slot: int | None = None) -> tuple[bool, tuple[int, int] | None]:
+        """(placing?, counter) after pressing a unit key. Placing shows either as
+        the counter or as the Place / Rotate / Cancel menu."""
+        count = self._read_count(after, slot)
+        if count is not None:
+            return True, count
+        det = self._wait_after(after, timeout=1.0)
+        return bool(det is not None and det.placing), None
+
+    def _apply_count(self, key: str, placed: int, total: int, spot=None) -> None:
+        """Bring the plan in line with the game's counter for `key`.
+
+        The counter going up is the only thing that counts as a placement.
+        A unit that's full (e.g. 2/2), or already partly placed by the player,
+        only keeps the placements it still needs.
+        """
+        m = self.match
+        planned = self.settings.placement_order.count(key)
+        needed = max(0, min(planned, total) - placed)
+        before = m.counts.get(key)
+        m.counts[key] = placed
+        if before is not None and placed > before:
+            m.placed += placed - before
+            if spot is not None:
+                m.spots.append(spot)
+            self.log.emit(f"Placed {self._unit_label(key)} ({placed}/{total})", "Info")
+        have = m.pending.count(key)
+        for _ in range(have - needed):
+            m.pending.remove(key)
+        if needed == 0 and have:
+            self.log.emit(f"{self._unit_label(key)} is done ({placed}/{total}).", "Info")
+
+    def _place_next(self, hwnd: int) -> None:
+        m = self.match
+        if not self._cooldown("place", 1.5):
+            return
+        key = m.pending[0]
+        label = self._unit_label(key)
+        self._say(f"Placing {label} — {len(m.pending)} left")
+
+        inp.press(hwnd, key)
+        self._park_mouse(hwnd)
+        pressed_at = time.monotonic()
+        placing, count = self._in_placement_mode(pressed_at + 0.1, int(key))
+        det = self.detector.latest
+        if not placing:
+            if det is not None and det.no_money:
+                self._say(f"Waiting for money for {label}", log=False)
+                self._last_done["place"] = time.monotonic() + 1.5
+            else:
+                m.failures[key] = m.failures.get(key, 0) + 1
+                if m.failures[key] >= 6:
+                    self.log.emit(f"{label}: no placement counter after 6 tries — skipping it.", "Warn")
+                    while key in m.pending:
+                        m.pending.remove(key)
+            inp.press(hwnd, "q")
+            return
+        m.failures.pop(key, None)
+        if count is not None:
+            self._apply_count(key, *count)
+            if key not in m.pending:
+                inp.press(hwnd, "q")
+                return
+
+        # In placement mode the game paints everywhere you can't place red, so
+        # candidates come from a frame taken now. Order: beside units already
+        # placed, then non-red ground (near the road first), then the general
+        # rings. Spots that already failed this match are skipped.
+        frame_w, frame_h = self._frame_size()
+        _, frame = self.capture.latest_frame()
+        # The player's zones for this map come first (next to placed units first).
+        zone = []
+        if self._map is not None and self.detector.latest is not None:
+            zone = spread(self._map.spots(self.detector.latest.lines, frame_w, frame_h),
+                          m.spots, 0.04 * frame_h)
+            if not zone and self._cooldown("zone_fit_log", 30):
+                self.log.emit(f"Couldn't line up the {self._map.name} zones with the screen "
+                              "(map title not read) — using automatic spots.", "Warn")
+        ground = placeable_spots(frame) if frame is not None else []
+        near, general = spots_to_try(frame_w, frame_h, m.spots)
+        if m.spot_cursor >= len(general):
+            m.spot_cursor = 0
+        order = zone + near + ground + general[m.spot_cursor:] + general[:m.spot_cursor]
+        # A failed spot is often taken by someone else's unit: skip the area
+        # around it too, not just the exact point.
+        tolerance = 0.04 * frame_h
+        order = [(x, y) for x, y in order
+                 if all(math.hypot(x - fx, y - fy) > tolerance for fx, fy in m.failed_spots)]
+        tries = order[:SPOTS_PER_TRY]
+        m.spot_cursor += max(0, len(tries) - len(zone) - len(near) - len(ground))
+        for x, y in tries:
+            if self.isInterruptionRequested() or key not in m.pending or self._card_pick_up():
+                break
+            inp.click(hwnd, x, y)
+            self._park_mouse(hwnd)
+            clicked_at = time.monotonic()
+            count = self._read_count(clicked_at + 0.15, int(key))
+            det = self.detector.latest
+            if det is not None and det.screen not in ("in_match", "unknown"):
+                break   # a card pick or the end screen came up
+            if det is not None and det.no_money:
+                self._say(f"Waiting for money for {label}", log=False)
+                break
+            if count is not None:
+                placed_before = m.placed
+                self._apply_count(key, *count, spot=(x, y))
+                if m.placed > placed_before:
+                    break   # placed one; start the next placement fresh
+                m.failed_spots.append((x, y))
+        # Leave placement mode; the next pass continues with whatever is left.
+        inp.press(hwnd, "q")
+
+    def _frame_size(self) -> tuple[int, int]:
+        _, frame = self.capture.latest_frame()
+        if frame is None:
+            return 1920, 1080
+        return frame.shape[1], frame.shape[0]
+
+    def _on_unit_manager(self, hwnd: int) -> None:
+        m, cfg = self.match, self.settings
+        if not cfg.upgrade_units or m.upgrades_done or (cfg.place_units and m.pending):
+            if self._cooldown("close_manager", 4):
+                inp.press(hwnd, "f")     # F toggles the unit manager
+            return
+        det = self._fresh("unit_manager")
+        _, frame = self.capture.latest_frame()
+        if det is None or frame is None or not self._cooldown("upgrade", 1.0):
+            return
+        # Green buttons by colour, plus any "Upg" text that isn't on one of them
+        # (gold last-upgrade buttons, or ones the colour search missed).
+        green = find_green_buttons(frame)
+        text_buttons = [l for l in det.lines if _norm(l.text).startswith("upg")
+                        and not any(g.x - 10 <= l.center_x <= g.x + g.w + 10
+                                    and g.y - 10 <= l.y + l.h / 2 <= g.y + g.h + 10 for g in green)]
+        buttons = upgrade_order(det.lines, cfg.unit_names, cfg.upgrade_priority, green + text_buttons)
+        upg_text = bool(text_buttons) or any(_norm(l.text).startswith("upg") for l in det.lines)
+        if not buttons:
+            # No green button and no "Upg" text (grey = can't afford yet) on
+            # 4 reads in a row → everything is Max.
+            m.no_upgrade_reads = 0 if upg_text else m.no_upgrade_reads + 1
+            if upg_text:
+                self._say("Upgrading — waiting for money", log=False)
+            if m.no_upgrade_reads >= 4:
+                m.upgrades_done = True
+                self.log.emit("All units are maxed out.", "Info")
+                self._say("All units maxed — watching the match")
+                inp.press(hwnd, "f")
+            return
+        m.no_upgrade_reads = 0
+        self._say(f"Upgrading ({len(buttons)} not maxed yet)", log=False)
+        for button in buttons:      # clicking one we can't afford does nothing
+            if self.isInterruptionRequested() or self._card_pick_up():
+                return
+            inp.click(hwnd, button.center_x, button.y + button.h / 2)
+            self._upgrade_clicks += 1
+            self.msleep(120)
+        if self._cooldown("upgrade_log", 20):
+            self.log.emit(f"Upgrading: {len(buttons)} unit(s) not maxed yet "
+                          f"({self._upgrade_clicks} upgrade clicks so far).", "Info")
+
+    def _on_card_pick(self, hwnd: int) -> None:
+        m = self.match
+        if not self.settings.auto_card_pick:
+            self._say("Card pick — left to you", log=False)
+            return
+        if m.card_voted:
+            self._say("Card pick — voted, waiting", log=False)
+            return
+        if time.monotonic() - m.card_seen_at < 0.6:
+            return      # the cards are still sliding in
+        det = self.detector.latest
+        if det is None or det.screen != "card_pick":
+            return
+        # Use the newest frame, but the layout comes from the text already read.
+        _, frame = self.capture.latest_frame()
+        if frame is None or not self._cooldown("card", 0.5):
+            return
+
+        # Step 1 (once per card pick): choose and click a card. Clicking it a
+        # second time could un-select it, so it's never clicked again.
+        if not m.card_clicked:
+            cards = find_cards(frame, det.lines)
+            if not cards:
+                if self._cooldown("card_layout_log", 10):
+                    self.log.emit("Card pick: can't find the cards yet.", "Warn")
+                return
+            read_card_texts(cards, det.lines)      # uses text already read: no extra time
+            if needs_votes(cards):                 # only when the best red cards tie
+                read_votes(frame, cards, self.numbers)
+            card, reason = choose_card(cards)
+            colors = ", ".join(f"{c.color}{'' if c.votes is None else f' ({c.votes})'}" for c in cards)
+            self.log.emit(f"Card pick: [{colors}] → card {card.index + 1}, {reason}", "Info")
+            self._say(f"Card pick — card {card.index + 1} ({reason})", log=False)
+            inp.click(hwnd, *card.center)
+            m.card_clicked = True
+            m.vote_target = vote_button(det.lines) or predicted_vote_button(det.lines)
+            self.msleep(300)                # let the Vote button appear
+
+        # Step 2: press Vote. Its spot is known from the layout, so there's no
+        # need to wait for it to be read; a read position wins if there is one.
+        target = vote_button(det.lines) if m.card_clicked and det is not None else None
+        target = target or m.vote_target
+        if target is None:
+            if self._cooldown("vote_button_log", 10):
+                self.log.emit("Card pick: waiting for the Vote button.", "Info")
+            return
+        inp.click(hwnd, *target)
+        m.card_voted = True
+        self.log.emit("Card pick: voted.", "Info")
+
+    def _on_end(self, hwnd: int) -> None:
+        det = self._fresh("end")
+        if det is None:
+            return
+        if not self.match.recorded and det.result:
+            self._record_run(det)
+        if not self._cooldown("next", 4):
+            return
+        button = self._line(det, "next", threshold=0.75)
+        if button is None:
+            return
+        self._say("Match over → clicking Next")
+        self._click_line(hwnd, button, "Next")
+
+    def _record_run(self, det: Detection) -> None:
+        """Note the run's result, waves, time and SummerPearls (once per run)."""
+        _, frame = self.capture.latest_frame()
+        if frame is None:
+            return
+        self.match.recorded = True
+        map_name = self._map.name if self._map else (self.detector.tracker.map_name or "")
+        try:
+            record = read_run(frame, det.lines, self._ocr, det.result, map_name)
+            save_run(record, frame)
+        except Exception as exc:
+            self.log.emit(f"Couldn't record the run: {exc}", "Warn")
+            return
+        pearls = f"+{record.pearls:,} SummerPearls" if record.pearls is not None else "pearls unread"
+        self.log.emit(f"Run: {'Victory' if record.result == 'win' else 'Defeat'}"
+                      f"{' on ' + record.map_name if record.map_name else ''} — "
+                      f"{record.waves or '?'} waves, {record.duration or '?'} — {pearls}", "Info")
+        self.run_recorded.emit(record)
+
+    def _on_after_end(self, hwnd: int) -> None:
+        det = self._fresh("after_end")
+        if det is None or not self._cooldown("return", 5):
+            return
+        button = self._line(det, "return to lobby")
+        if button is None:
+            return
+        self._say("Returning to lobby")
+        self._click_line(hwnd, button, "Return to lobby")
