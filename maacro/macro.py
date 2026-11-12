@@ -616,6 +616,10 @@ class MacroThread(QThread):
                  if all(math.hypot(x - fx, y - fy) > tolerance for fx, fy in m.failed_spots)]
         tries = order[:SPOTS_PER_TRY]
         m.spot_cursor += max(0, len(tries) - len(zone) - len(near) - len(ground))
+        # If the counter didn't read when the key was pressed, there's nothing
+        # to compare against and a placement (0/2 → 1/2) would go unnoticed.
+        # MAACRO places from the start of the match, so unread means none yet.
+        m.counts.setdefault(key, 0)
         for x, y in tries:
             if self.isInterruptionRequested() or key not in m.pending or self._card_pick_up():
                 break
@@ -635,6 +639,12 @@ class MacroThread(QThread):
                 if m.placed > placed_before:
                     break   # placed one; start the next placement fresh
                 m.failed_spots.append((x, y))
+            elif det is not None and not det.placing:
+                # Out of placement mode without a counter read: the unit most
+                # likely went down. Stop clicking — more clicks would land on
+                # placed units and open their panels. The next pass re-reads
+                # the counter and picks up the placement.
+                break
         # Leave placement mode; the next pass continues with whatever is left.
         inp.press(hwnd, "q")
 
