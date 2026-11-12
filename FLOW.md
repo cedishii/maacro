@@ -9,7 +9,7 @@ Reference screenshots are in `screens/`.
 | 1 | Lobby (`01_lobby`) | Click **Play** | In lobby |
 | 2 | Teleported in front of the yellow ring (`02_after_play`) | Hold **W** until the "Join Matchmaking?" box appears (time out → retry from lobby) | Walking to matchmaking |
 | 3 | "Join Matchmaking?" (`03_join_matchmaking`) | Click **Find Match** | Joining matchmaking |
-| 4 | Captcha (`04_captcha_*`) | **Play a sound and wait for the player** to type it (not automated). Once the typed answer stays the same for 1.5 s, MAACRO clicks **Submit**. | Captcha – your turn |
+| 4 | Captcha (`04_captcha_*`) | **full automated now**Submit**.|
 | 5 | "Matchmaking started / Teleporting / Match found" (`05_match_found`) | Wait for the match to load | Matchmaking → Match found |
 | 6 | "Vote start: 0/6" (`06_vote_start`) | Click **Yes** right away (setting, on by default). If others are slow, the countdown finishes anyway. | Vote start – waiting |
 
