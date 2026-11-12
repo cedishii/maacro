@@ -60,6 +60,7 @@ def narrow_to_words(line: OcrLine, keyword: str) -> OcrLine:
 
 
 UPGRADE_RECHECK = 40     # seconds before looking at a "maxed" manager again
+PLACE_RETRY_PAUSE = 20   # seconds of upgrading before trying stuck units again
 MISSES_BEFORE_NEXT = 4   # placing passes without luck before trying the next unit
 WALK_MAX_WAVE = 3        # later than this, the match is under way: don't walk
 
@@ -81,6 +82,12 @@ class MatchState:
     no_upgrade_reads: int = 0
     close_tries: int = 0            # F presses to close a manager that's in the way
     misses: dict[str, int] = field(default_factory=dict)  # passes in a row without placing, per key
+    # Units that had their turn and didn't go down: "room" = clicked spots,
+    # none worked; "other" = no placement mode (money, unreadable counter).
+    stuck_room: set = field(default_factory=set)
+    stuck_other: set = field(default_factory=set)
+    nudged: bool = False            # walked forward 0.5 s to find room
+    place_paused_until: float = 0.0  # upgrading meanwhile, then placing again
     card_voted: bool = False
     card_clicked: bool = False
     vote_target: tuple[float, float] | None = None
@@ -600,7 +607,7 @@ class MacroThread(QThread):
         # read look the same as Max), so check the manager again now and then.
         if m.upgrades_done and time.monotonic() - m.upgrades_done_at > UPGRADE_RECHECK:
             m.upgrades_done = False
-        if cfg.place_units and m.pending:
+        if cfg.place_units and m.pending and not self._place_paused():
             self._place_next(hwnd)
         elif cfg.upgrade_units and not m.upgrades_done:
             # F toggles the manager, so don't press it if the manager was on
@@ -615,7 +622,7 @@ class MacroThread(QThread):
             yen = f" — {det.yen}¥" if det is not None and det.yen is not None else ""
             self._say((f"In match — wave {wave}" if wave else "In match") + yen, log=False)
 
-    def _walk_map(self, hwnd: int, walk: dict) -> None:
+    def _walk_map(self, hwnd: int, walk: dict, what: str | None = None) -> None:
         """Walk to the spot the map's zones were drawn from: hold the key for
         `seconds`, then (still holding it) jump `jumps` times. `"jump": true`
         instead taps Space all the way."""
@@ -624,7 +631,8 @@ class MacroThread(QThread):
         jumps = int(walk.get("jumps", 0))
         spam = bool(walk.get("jump", False))
         extra = f", then jump {jumps}x" if jumps else (" + jumping" if spam else "")
-        self._say(f"Walking to the {self._map.name} spot ({key.upper()} for {seconds:g}s{extra})")
+        what = what or f"the {self._map.name} spot"
+        self._say(f"Walking to {what} ({key.upper()} for {seconds:g}s{extra})")
         inp.focus(hwnd)
         inp.key_down(key)
         try:
@@ -648,6 +656,9 @@ class MacroThread(QThread):
         inp.key_down("space")
         self.msleep(60)
         inp.key_up("space")
+
+    def _place_paused(self) -> bool:
+        return time.monotonic() < self.match.place_paused_until
 
     def _unit_label(self, key: str) -> str:
         name = self.settings.unit_names.get(key, "").strip()
@@ -730,9 +741,10 @@ class MacroThread(QThread):
             else:
                 m.failures[key] = m.failures.get(key, 0) + 1
                 if m.failures[key] >= 6:
-                    self.log.emit(f"{label}: no placement counter after 6 tries — skipping it.", "Warn")
-                    while key in m.pending:
-                        m.pending.remove(key)
+                    m.failures[key] = 0
+                    self.log.emit(f"{label}: no placement counter after 6 tries — "
+                                  "trying the other units first, back to it later.", "Warn")
+                    self._unit_stuck(hwnd, key, room=False)
             inp.press(hwnd, "q")
             return
         m.failures.pop(key, None)
@@ -814,16 +826,40 @@ class MacroThread(QThread):
         inp.press(hwnd, "q")
         if m.placed > placed_before_pass or waiting_for_money:
             m.misses.pop(key, None)
+            if m.placed > placed_before_pass:
+                m.stuck_room.discard(key)
+                m.stuck_other.discard(key)
         elif tries:
             m.misses[key] = m.misses.get(key, 0) + 1
-            # One unit that won't go down (no room for it, wrong spots) mustn't
-            # hold up the rest: send it to the back of the queue.
-            if m.misses[key] >= MISSES_BEFORE_NEXT and any(k != key for k in m.pending):
+            if m.misses[key] >= MISSES_BEFORE_NEXT:
                 m.misses[key] = 0
-                count_left = m.pending.count(key)
-                m.pending = [k for k in m.pending if k != key] + [key] * count_left
-                self.log.emit(f"{label} didn't go down after {MISSES_BEFORE_NEXT} tries — "
-                              "placing the other units first.", "Info")
+                self.log.emit(f"{label} didn't go down after {MISSES_BEFORE_NEXT} tries.", "Info")
+                self._unit_stuck(hwnd, key, room=True)
+
+    def _unit_stuck(self, hwnd: int, key: str, room: bool) -> None:
+        """`key` had its turn without going down. Send it to the back of the
+        queue so it doesn't hold up the rest. Once every unit still to place
+        is stuck: if it's for lack of room, walk forward 0.5 s (once a match)
+        and try again there; otherwise upgrade for a while, then try again.
+        Units are never dropped: they all get placed eventually."""
+        m = self.match
+        (m.stuck_room if room else m.stuck_other).add(key)
+        count_left = m.pending.count(key)
+        m.pending = [k for k in m.pending if k != key] + [key] * count_left
+        if not set(m.pending) <= (m.stuck_room | m.stuck_other):
+            return      # others still to try first
+        no_room = bool(m.stuck_room & set(m.pending))
+        m.stuck_room.clear()
+        m.stuck_other.clear()
+        m.failed_spots.clear()
+        if no_room and not m.nudged:
+            m.nudged = True
+            self.log.emit("No room for the remaining units here — moving forward 0.5 s.", "Info")
+            self._walk_map(hwnd, {"key": "w", "seconds": 0.5}, what="a free spot")
+            return
+        m.place_paused_until = time.monotonic() + PLACE_RETRY_PAUSE
+        self.log.emit(f"Couldn't place {len(m.pending)} unit(s) yet — upgrading for "
+                      f"{PLACE_RETRY_PAUSE} s, then trying again.", "Info")
 
     def _frame_size(self) -> tuple[int, int]:
         _, frame = self.capture.latest_frame()
@@ -855,10 +891,12 @@ class MacroThread(QThread):
                 and m.close_tries >= 3:
             # Started with the manager open (F3 → F1 mid-match) and it won't
             # close: the units are most likely placed already, so upgrade.
-            self.log.emit("The unit manager won't close — assuming the units are "
-                          "already placed and upgrading.", "Warn")
-            m.pending.clear()
-        if not cfg.upgrade_units or m.upgrades_done or (cfg.place_units and m.pending):
+            self.log.emit("The unit manager won't close — upgrading for "
+                          f"{PLACE_RETRY_PAUSE} s, then placing again.", "Warn")
+            m.close_tries = 0
+            m.place_paused_until = time.monotonic() + PLACE_RETRY_PAUSE
+        if not cfg.upgrade_units or m.upgrades_done or (cfg.place_units and m.pending
+                                                        and not self._place_paused()):
             if self._cooldown("close_manager", 3):
                 m.close_tries += 1
                 if m.close_tries == 1 and m.pending:
