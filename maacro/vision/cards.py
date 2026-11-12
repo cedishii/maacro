@@ -69,30 +69,48 @@ def classify_color(bgr: np.ndarray) -> str:
 SPAN_PER_TITLE_WIDTH = 2.34
 
 
-def find_cards(frame: np.ndarray, lines: list[OcrLine]) -> list[Card]:
-    """The three cards, left to right. Empty if the layout can't be found."""
+# Where the cards sit on a full live frame (1920×991 capture): the title's
+# top at 23.3% of the height, centred, span 52.4% of the height. Used when
+# the title can't be read (something drawn over it, e.g. a boss health bar).
+TITLE_Y_PER_HEIGHT = 0.233
+SPAN_PER_HEIGHT = 0.524
+
+
+def _layout(frame: np.ndarray, lines: list[OcrLine]) -> tuple[float, float, float]:
+    """(centre x, title top y, span) of the card pick."""
+    height, width = frame.shape[:2]
     title = _find(lines, "choose a card")
-    if title is None or title.w < 20:
-        return []
-    span = SPAN_PER_TITLE_WIDTH * title.w
     bottom = _find(lines, "vote ends in")
-    if bottom is not None and 0.85 * span < bottom.y - title.y < 1.15 * span:
-        span = bottom.y - title.y
-    cx = title.center_x
+    if title is not None and title.w >= 20:
+        span = SPAN_PER_TITLE_WIDTH * title.w
+        if bottom is not None and 0.85 * span < bottom.y - title.y < 1.15 * span:
+            span = bottom.y - title.y
+        return title.center_x, title.y, span
+    span = SPAN_PER_HEIGHT * height
+    if bottom is not None:
+        # "Vote ends in: …" is centred under the cards, one span below the title.
+        return bottom.center_x, bottom.y - span, span
+    return width / 2, TITLE_Y_PER_HEIGHT * height, span
+
+
+def find_cards(frame: np.ndarray, lines: list[OcrLine]) -> list[Card]:
+    """The three cards, left to right. Falls back on the "Vote ends in" line,
+    then on the usual spot on screen, when the title can't be read."""
+    cx, title_y, span = _layout(frame, lines)
     cards = []
     for index, offset in enumerate((-1, 0, 1)):
         x = cx + offset * CARD_SPACING * span
-        top = int(title.y + COLOR_TOP * span)
-        bot = int(title.y + COLOR_BOTTOM * span)
+        top = int(title_y + COLOR_TOP * span)
+        bot = int(title_y + COLOR_BOTTOM * span)
         left = int(x - CARD_HALF_WIDTH * span)
         right = int(x + CARD_HALF_WIDTH * span)
         sample = frame[max(0, top):bot, max(0, left):right]
         color = classify_color(sample) if sample.size else "red"
-        vote_box = (int(x - VOTE_HALF_WIDTH * span), int(title.y + VOTE_TOP * span),
-                    int(x + VOTE_HALF_WIDTH * span), int(title.y + VOTE_BOTTOM * span))
-        text_box = (int(x - 0.26 * span), int(title.y + 0.08 * span),
-                    int(x + 0.26 * span), int(title.y + 0.75 * span))
-        cards.append(Card(index, (x, title.y + 0.45 * span), color, vote_box, text_box=text_box))
+        vote_box = (int(x - VOTE_HALF_WIDTH * span), int(title_y + VOTE_TOP * span),
+                    int(x + VOTE_HALF_WIDTH * span), int(title_y + VOTE_BOTTOM * span))
+        text_box = (int(x - 0.26 * span), int(title_y + 0.08 * span),
+                    int(x + 0.26 * span), int(title_y + 0.75 * span))
+        cards.append(Card(index, (x, title_y + 0.45 * span), color, vote_box, text_box=text_box))
     return cards
 
 
@@ -158,16 +176,10 @@ def choose_card(cards: list[Card]) -> tuple[Card, str] | None:
 VOTE_DX, VOTE_DY = -0.20, 1.125     # × span
 
 
-def predicted_vote_button(lines: list[OcrLine]) -> tuple[float, float] | None:
-    """Where Vote will be, from the title alone (it may not be drawn yet)."""
-    title = _find(lines, "choose a card")
-    if title is None or title.w < 20:
-        return None
-    span = SPAN_PER_TITLE_WIDTH * title.w
-    bottom = _find(lines, "vote ends in")
-    if bottom is not None and 0.85 * span < bottom.y - title.y < 1.15 * span:
-        span = bottom.y - title.y
-    return title.center_x + VOTE_DX * span, title.y + VOTE_DY * span
+def predicted_vote_button(lines: list[OcrLine], frame: np.ndarray) -> tuple[float, float]:
+    """Where Vote will be, from the card layout (it may not be drawn yet)."""
+    cx, title_y, span = _layout(frame, lines)
+    return cx + VOTE_DX * span, title_y + VOTE_DY * span
 
 
 def vote_button(lines: list[OcrLine], title: OcrLine | None = None) -> tuple[float, float] | None:

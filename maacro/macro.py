@@ -7,6 +7,8 @@ Lobby → Play → walk into the ring → Find Match → (captcha: player types,
 from __future__ import annotations
 
 import math
+
+import cv2
 import time
 import pyautogui
 import traceback
@@ -819,10 +821,15 @@ class MacroThread(QThread):
         # second time could un-select it, so it's never clicked again.
         if not m.card_clicked:
             cards = find_cards(frame, det.lines)
-            if not cards:
-                if self._cooldown("card_layout_log", 10):
-                    self.log.emit("Card pick: can't find the cards yet.", "Warn")
-                return
+            title_read = any(fuzzy_in("choose a card", l.text) for l in det.lines)
+            if not title_read and self._cooldown("card_layout_log", 30):
+                # Keep a picture: the title being unreadable is what used to
+                # stop card picks, and the cause isn't known yet.
+                shot = Path(__file__).resolve().parents[1] / "logs" / f"card_pick_{time.strftime('%Y%m%d_%H%M%S')}.png"
+                shot.parent.mkdir(exist_ok=True)
+                cv2.imwrite(str(shot), frame)
+                self.log.emit(f"Card pick: title not read — using the usual card spots "
+                              f"(screenshot: {shot}).", "Warn")
             read_card_texts(cards, det.lines)      # uses text already read: no extra time
             if needs_votes(cards):                 # only when the best red cards tie
                 read_votes(frame, cards, self.numbers)
@@ -832,7 +839,7 @@ class MacroThread(QThread):
             self._say(f"Card pick — card {card.index + 1} ({reason})", log=False)
             inp.click(hwnd, *card.center)
             m.card_clicked = True
-            m.vote_target = vote_button(det.lines) or predicted_vote_button(det.lines)
+            m.vote_target = vote_button(det.lines) or predicted_vote_button(det.lines, frame)
             self.msleep(300)                # let the Vote button appear
 
         # Step 2: press Vote. Its spot is known from the layout, so there's no
