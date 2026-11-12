@@ -43,7 +43,7 @@ class GameTracker:
             if self.screen in FRESH_SCREENS:
                 self._end_reads.clear()
                 self._result_counted = False
-            if self.screen in ("lobby", "match_found", "vote_start"):
+            if self.screen in ("lobby", "match_found", "vote_start", "loading", "after_end"):
                 self._set_wave(None, events)
                 self._map_reads.clear()
 

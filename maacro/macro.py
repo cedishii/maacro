@@ -60,6 +60,7 @@ def narrow_to_words(line: OcrLine, keyword: str) -> OcrLine:
 
 
 UPGRADE_RECHECK = 40     # seconds before looking at a "maxed" manager again
+WALK_MAX_WAVE = 3        # later than this, the match is under way: don't walk
 
 
 @dataclass
@@ -583,9 +584,15 @@ class MacroThread(QThread):
         # goes down (walking after that would leave placed units behind).
         if cfg.place_units and m.pending and not self._map_walked and (self._map is not None or m.placed):
             self._map_walked = True
+            wave = self.detector.tracker.wave
             if self._map is not None and self._map.walk:
-                self._walk_map(hwnd, self._map.walk)
-                return
+                # Started mid-match (F3 → F1): the player is no longer at the
+                # spawn, so the walk would only take them somewhere wrong.
+                if wave is not None and wave > WALK_MAX_WAVE:
+                    self.log.emit(f"Wave {wave} already — skipping the {self._map.name} walk.", "Info")
+                else:
+                    self._walk_map(hwnd, self._map.walk)
+                    return
         m.close_tries = 0
         # "Maxed" is only a guess from a few reads (grey buttons + "Upg" not
         # read look the same as Max), so check the manager again now and then.
