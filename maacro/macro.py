@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import math
 import time
+import traceback
+from pathlib import Path
 import pyautogui
 import winsound
 from dataclasses import dataclass, field
@@ -98,6 +100,9 @@ class MacroThread(QThread):
         self._map_warned = False
         self._matchmaking_at = -1e9     # last time matchmaking / verification / match found showed
         self._upgrade_clicks = 0
+        self._last_error = ""           # last crash logged by _report_error
+        self._last_error_at = 0.0
+        self._error_repeats = 0
 
     # --- helpers -------------------------------------------------------
     def _say(self, status: str, log: bool = True, level: str = "Info") -> None:
@@ -106,6 +111,26 @@ class MacroThread(QThread):
             self.status.emit(status)
             if log:
                 self.log.emit(status, level)
+
+    def _report_error(self, exc: Exception) -> None:
+        """Log a crash from one loop step without stopping the macro.
+
+        The full traceback is logged the first time; if the same error keeps
+        repeating, only a short line is logged every 30 seconds."""
+        details = traceback.format_exception(exc)
+        where = traceback.extract_tb(exc.__traceback__)[-1] if exc.__traceback__ else None
+        place = f" ({Path(where.filename).name} line {where.lineno}, in {where.name})" if where else ""
+        summary = f"Error on screen '{self._screen}': {type(exc).__name__}: {exc}{place}"
+        now = time.monotonic()
+        if summary == self._last_error:
+            self._error_repeats += 1
+            if now - self._last_error_at >= 30:
+                self._last_error_at = now
+                self.log.emit(f"{summary} — still happening ({self._error_repeats}x)", "Error")
+            return
+        self._last_error, self._last_error_at, self._error_repeats = summary, now, 1
+        self.log.emit(summary + " — macro keeps running.", "Error")
+        self.log.emit("".join(details).rstrip(), "Error")
 
     def _cooldown(self, key: str, seconds: float) -> bool:
         """True (and starts the timer) if `key` wasn't done in the last `seconds`."""
@@ -195,38 +220,45 @@ class MacroThread(QThread):
                           "placed, so only upgrading and picking cards.", "Info")
         try:
             while not self.isInterruptionRequested():
-                latest = self.detector.latest
-                if latest is not None and latest.screen == "unit_manager":
-                    self._manager_seen_at = time.monotonic()
-                if self.detector.tracker.screen in ("captcha", "match_found"):
-                    self._matchmaking_at = time.monotonic()
-                elif self.detector.tracker.screen in ("in_match", "vote_start"):
-                    self._matchmaking_at = -1e9
-                hwnd = self.capture.hwnd
-                if not hwnd:
-                    self._say("Waiting for Roblox…")
+                try:
+                    latest = self.detector.latest
+                    if latest is not None and latest.screen == "unit_manager":
+                        self._manager_seen_at = time.monotonic()
+                    if self.detector.tracker.screen in ("captcha", "match_found"):
+                        self._matchmaking_at = time.monotonic()
+                    elif self.detector.tracker.screen in ("in_match", "vote_start"):
+                        self._matchmaking_at = -1e9
+                    hwnd = self.capture.hwnd
+                    if not hwnd:
+                        self._say("Waiting for Roblox…")
+                        self._sleep(1)
+                        continue
+                    self._watch_map(latest)
+                    if self._close_leaderboard(hwnd, latest):
+                        self._sleep(0.2)
+                        continue
+                    screen = self.detector.tracker.screen
+                    # A card pick is time-limited: act on the first read of it
+                    # instead of waiting for it to be confirmed.
+                    if latest is not None and latest.screen == "card_pick":
+                        screen = "card_pick"
+                    if screen != self._screen:
+                        if screen in NEW_MATCH_SCREENS:
+                            self._new_match()
+                        if self._screen == "card_pick":
+                            self.match.card_voted = self.match.card_clicked = False
+                        if screen == "card_pick":
+                            self.match.card_seen_at = time.monotonic()
+                        self._screen = screen
+                    handler = getattr(self, f"_on_{screen}", None)
+                    if handler:
+                        handler(hwnd)
+                except Exception as exc:
+                    # Keep the macro running: log the error and try again next loop.
+                    inp.release_all()
+                    self._report_error(exc)
                     self._sleep(1)
                     continue
-                self._watch_map(latest)
-                if self._close_leaderboard(hwnd, latest):
-                    self._sleep(0.2)
-                    continue
-                screen = self.detector.tracker.screen
-                # A card pick is time-limited: act on the first read of it
-                # instead of waiting for it to be confirmed.
-                if latest is not None and latest.screen == "card_pick":
-                    screen = "card_pick"
-                if screen != self._screen:
-                    if screen in NEW_MATCH_SCREENS:
-                        self._new_match()
-                    if self._screen == "card_pick":
-                        self.match.card_voted = self.match.card_clicked = False
-                    if screen == "card_pick":
-                        self.match.card_seen_at = time.monotonic()
-                    self._screen = screen
-                handler = getattr(self, f"_on_{screen}", None)
-                if handler:
-                    handler(hwnd)
                 self._sleep(0.2)
         finally:
             inp.release_all()

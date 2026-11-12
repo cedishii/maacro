@@ -33,7 +33,41 @@ def already_running() -> bool:
     return True
 
 
+def log_crashes() -> None:
+    """Write any uncaught error to logs/YYYY-MM-DD.log.
+
+    The shortcut runs pythonw.exe (no console window), so without this a
+    crash outside the macro loop would vanish without a trace."""
+    import threading
+    import traceback
+    from datetime import datetime
+
+    log_dir = Path(__file__).resolve().parent / "logs"
+
+    def write(exc_type, exc, tb) -> None:
+        try:
+            log_dir.mkdir(exist_ok=True)
+            now = datetime.now()
+            text = "".join(traceback.format_exception(exc_type, exc, tb)).rstrip()
+            with open(log_dir / f"{now:%Y-%m-%d}.log", "a", encoding="utf-8") as file:
+                file.write(f"{now:%H:%M:%S} [Error] Crash (uncaught):\n{text}\n")
+        except OSError:
+            pass
+
+    def on_error(exc_type, exc, tb) -> None:
+        write(exc_type, exc, tb)
+        sys.__excepthook__(exc_type, exc, tb)
+
+    def on_thread_error(args) -> None:
+        if args.exc_type is not SystemExit:
+            write(args.exc_type, args.exc_value, args.exc_traceback)
+
+    sys.excepthook = on_error
+    threading.excepthook = on_thread_error
+
+
 def main() -> int:
+    log_crashes()
     if already_running():
         return 0
     # Show MAACRO's own icon on the taskbar instead of Python's.
