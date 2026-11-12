@@ -29,6 +29,8 @@ from .placement import drop_red_spots, find_green_buttons, placeable_spots, spot
 
 SPOTS_PER_TRY = 12      # then give up for now, so card picks etc. aren't blocked
 CAPTCHA_SUBMIT_AFTER = 1.5   # seconds the typed answer must stay the same before Submit
+CAPTCHA_STUCK_AFTER = 30     # seconds on the captcha before backing out and retrying
+CAPTCHA_TYPING_GRACE = 8     # ...but not if the typed number changed this recently
 from .vision.cards import (choose_card, find_cards, needs_votes, predicted_vote_button, read_card_texts,
                            read_votes, vote_button)
 from .vision.numbers import GuardedNumberReader, make_number_reader
@@ -126,6 +128,7 @@ class MacroThread(QThread):
         self._last_error = ""           # last crash logged by _report_error
         self._last_error_at = 0.0
         self._error_repeats = 0
+        self._matchmaking_started_at = None     # Find Match click, for the stuck-captcha catcher
 
     # --- helpers -------------------------------------------------------
     def _say(self, status: str, log: bool = True, level: str = "Info") -> None:
@@ -234,6 +237,7 @@ class MacroThread(QThread):
         self._maps = load_maps()
         self._map = None
         self._map_walked = False    # the thread is reused on every F1: start fresh
+        self._matchmaking_started_at = None
         if self._maps:
             self.log.emit(f"Placement zones saved for: {', '.join(m.name for m in self._maps)}.", "Info")
         wave = self.detector.tracker.wave
@@ -252,6 +256,10 @@ class MacroThread(QThread):
                         self._matchmaking_at = time.monotonic()
                     elif self.detector.tracker.screen in ("in_match", "vote_start"):
                         self._matchmaking_at = -1e9
+                    # Out of matchmaking: the stuck-captcha timer starts over next time.
+                    if self.detector.tracker.screen in ("match_found", "loading", "vote_start",
+                                                        "in_match", "lobby"):
+                        self._matchmaking_started_at = None
                     hwnd = self.capture.hwnd
                     if not hwnd:
                         self._say("Waiting for Roblox…")
@@ -485,6 +493,8 @@ class MacroThread(QThread):
         self._say("Joining matchmaking")
         self._click_line(hwnd, button, "Find Match")
 
+        self._matchmaking_started_at = time.monotonic()
+
         time.sleep(1)
 
         screenshot = pyautogui.screenshot(
@@ -521,27 +531,60 @@ class MacroThread(QThread):
         self._click_line(hwnd, submit, "Submit")
 
     def _on_captcha(self, hwnd: int) -> None:
-        """The verification is the player's to type. Once they've typed
-        something and stopped for a moment, press Submit for them."""
         det = self._fresh("captcha")
         if det is None:
             return
+
+        # Start a timer the first time we see this captcha.
+        if self._matchmaking_started_at is None:
+            self._matchmaking_started_at = time.monotonic()
+
         submit = self._line(det, "submit", exact=True)
         typed = self._typed_answer(det, submit)
         now = time.monotonic()
+
         if typed != getattr(self, "_captcha_typed", None):
             self._captcha_typed, self._captcha_typed_at = typed, now
+
+        # If we're still on the captcha after 30 seconds, assume something
+        # went wrong and restart matchmaking — but not while the number is
+        # still being typed (it changed in the last CAPTCHA_TYPING_GRACE s).
+        typing = bool(typed) and now - self._captcha_typed_at < CAPTCHA_TYPING_GRACE
+        if now - self._matchmaking_started_at > CAPTCHA_STUCK_AFTER and not typing:
+            self.log.emit(
+                f"Captcha stuck for {CAPTCHA_STUCK_AFTER} seconds. Restarting matchmaking.",
+                "Warn"
+            )
+
+            cancel = self._line(det, "cancel", exact=True)
+
+            if cancel is not None:
+                self._click_line(hwnd, cancel, "Cancel")
+                self._sleep(1)
+            else:
+                self.log.emit("No Cancel button found on the captcha — can't back out of it.", "Warn")
+
+            self._matchmaking_started_at = None
+
+            # Allow Play to be clicked immediately again.
+            self._last_done["play"] = time.monotonic() - 999
+
+            return
+
         if not typed:
             self._say("Verification — your turn: type the number")
             return
+
         if submit is None or typed == getattr(self, "_captcha_submitted", None):
             return
+
         if now - self._captcha_typed_at < CAPTCHA_SUBMIT_AFTER:
             self._say("Verification — waiting for you to finish typing", log=False)
             return
+
         self._say("Verification typed → clicking Submit")
         self._click_line(hwnd, submit, "Submit")
-        self._captcha_submitted = typed     # retype (e.g. a typo) and it submits again
+        self._captcha_submitted = typed
 
     @staticmethod
     def _typed_answer(det: Detection, submit: OcrLine | None) -> str:
