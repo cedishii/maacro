@@ -35,7 +35,9 @@ def slugify(name: str) -> str:
 class MapZones:
     name: str
     zones: list[list[tuple[int, int]]]      # polygons, in screenshot pixels
-    anchor: tuple[float, float, float]      # map-name text in the screenshot: centre x, centre y, width
+    # Map-name text in the screenshot: centre x, centre y, width. None when the
+    # screenshot has no top title (zones then line up from the window size).
+    anchor: tuple[float, float, float] | None
     size: tuple[int, int]                   # screenshot width, height
     # Optional walk at the start of a match, before placing — the zones are
     # drawn from where it ends. {"key": "d", "seconds": 4.0, "jump": true}
@@ -57,7 +59,7 @@ class MapZones:
         the map-name text near the top of the live screen. Without it (the top
         title isn't up yet at the start of a match), from the window size:
         same width ratio, title bar cut off. None if neither works."""
-        title = name_box(lines, self.name, frame_h)
+        title = name_box(lines, self.name, frame_h) if self.anchor is not None else None
         if title is not None:
             scale = title[2] / self.anchor[2]
             if 0.4 < scale < 3.0:
@@ -178,9 +180,11 @@ def _fill_outline(stroke: np.ndarray, width: int, height: int) -> list[tuple[int
 
 def create_map(name: str, screenshot: Path, ocr: OcrReader | None = None,
                walk: dict | None = None,
-               anchor: tuple[float, float, float] | None = None) -> MapZones:
+               anchor: tuple[float, float, float] | None = None,
+               use_title: bool = True) -> MapZones:
     """Save a map from a screenshot with white circles. Raises ValueError with a
-    message for the player if something's missing. `walk` (see MapZones) is
+    message for the player if something's missing. `use_title=False` for a
+    screenshot without the top map title (e.g. on the vote-start screen). `walk` (see MapZones) is
     the walk done before placing; if not given, a saved one is kept."""
     image = cv2.imread(str(screenshot))
     if image is None:
@@ -188,10 +192,10 @@ def create_map(name: str, screenshot: Path, ocr: OcrReader | None = None,
     zones = extract_zones(image)
     if not zones:
         raise ValueError("No white circles found. Circle the placement areas in pure white.")
-    if anchor is None:
+    if anchor is None and use_title:
         lines = (ocr or OcrReader()).read(image)
         anchor = name_box(lines, name, image.shape[0])
-    if anchor is None:
+    if anchor is None and use_title:
         raise ValueError(f"Couldn't find the map name '{name}' at the top of the screenshot. "
                          "Include the map title in the screenshot and check the spelling.")
     slug = slugify(name)
@@ -207,7 +211,7 @@ def create_map(name: str, screenshot: Path, ocr: OcrReader | None = None,
     if Path(screenshot).resolve() != source.resolve():
         shutil.copyfile(screenshot, source)
     (MAPS_DIR / f"{slug}.json").write_text(json.dumps({
-        "name": name, "zones": zones, "anchor": list(anchor), "size": list(zones_map.size),
+        "name": name, "zones": zones, "anchor": list(anchor) if anchor else None, "size": list(zones_map.size),
         "source": source.name, "titlebar": zones_map.titlebar,
         **({"avoid": zones_map.avoid} if zones_map.avoid else {}),
         **({"walk": walk} if walk else {}),
@@ -221,7 +225,8 @@ def load_maps() -> list[MapZones]:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             maps.append(MapZones(data["name"], [[tuple(p) for p in z] for z in data["zones"]],
-                                 tuple(data["anchor"]), tuple(data["size"]),
+                                 tuple(data["anchor"]) if data.get("anchor") else None,
+                                 tuple(data["size"]),
                                  data.get("walk"),
                                  [[tuple(p) for p in z] for z in data.get("avoid", [])],
                                  data.get("titlebar")))

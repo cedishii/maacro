@@ -40,4 +40,4 @@ yet — add a walk when we get them):
 - Haunted Mansion (zones saved, no walk yet)
 - Adventurer Town
 
-Set up: Snowy Town (D for 4 s, then jump twice).
+Set up: Snowy Town (D for 4 s, then jump twice), Storm Hideout (W for 2 s).
