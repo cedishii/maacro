@@ -43,6 +43,7 @@ class Detection:
     no_money: bool = False           # "Not enough money!" banner
     yen: int | None = None           # money shown above the hotbar
     leaderboard_close: tuple[float, float] | None = None   # the × of an open damage leaderboard
+    chat_toggle: tuple[float, float] | None = None   # chat button, when the chat is open
     # An item drop (charm, portal…) waiting for "Click anywhere to continue":
     # (item name, rarity), either may be "" if not read.
     drop: tuple[str, str] | None = None
@@ -202,8 +203,45 @@ def detect_screen(frame: np.ndarray, lines: list[OcrLine]) -> Detection:
     if header is not None and det.screen in ("in_match", "unit_manager", "vote_start", "unknown"):
         det.leaderboard_close = (header.x - 2.36 * header.w,
                                  header.y + header.h / 2 - 1.7 * header.h)
+    # The chat ("[GLOBAL] … just pulled a …") covers the left card and its text.
+    if det.screen in ("in_match", "card_pick", "unit_manager", "vote_start", "unknown"):
+        det.chat_toggle = _chat_toggle(frame, lines)
     det.drop = _drop(lines)
     return det
+
+
+GLOBAL_RE = re.compile(r"g[l1i][o06]ba[l1i]")
+
+
+def _chat_toggle(frame: np.ndarray, lines: list[OcrLine]) -> tuple[float, float] | None:
+    """Where the chat button is, if the chat window is open (two or more
+    "[GLOBAL]" lines on the left)."""
+    height, width = frame.shape[:2]
+    chat = [l for l in lines if l.x < 0.3 * width and l.y < 0.6 * height
+            and GLOBAL_RE.search(l.text.lower())]
+    if len(chat) < 2:
+        return None
+    return chat_button(frame)
+
+
+def chat_button(frame: np.ndarray) -> tuple[float, float]:
+    """The speech-bubble button in Roblox's top-left bar (Roblox logo, menu,
+    chat, mic): the solid white shape just right of the menu's three thin
+    lines. Falls back on where it usually is (1920×991 capture: 173, 43)."""
+    import cv2
+    region = frame[:90, :400]
+    white = (cv2.cvtColor(region, cv2.COLOR_BGR2GRAY) > 200).astype(np.uint8)
+    count, _, stats, _ = cv2.connectedComponentsWithStats(white)
+    blobs = [tuple(int(v) for v in stats[i]) for i in range(1, count)]
+    menu = [b for b in blobs if b[3] <= 3 and 18 <= b[2] <= 40]
+    if menu:
+        mx, my, mw, _, _ = menu[0]
+        right = mx + mw
+        for x, y, w, h, area in sorted(blobs):
+            # Next solid shape to the right of the menu, on the same row.
+            if right < x < right + 90 and 15 <= w <= 45 and 15 <= h <= 40                     and abs((y + h / 2) - my) < 25 and area > 0.5 * w * h:
+                return x + w / 2, y + h / 2
+    return 173.0, 43.0
 
 
 RARITIES = ("common", "uncommon", "rare", "epic", "legendary", "mythic", "secret", "exclusive")

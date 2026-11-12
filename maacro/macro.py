@@ -245,6 +245,9 @@ class MacroThread(QThread):
                     if self._close_leaderboard(hwnd, latest):
                         self._sleep(0.2)
                         continue
+                    if self._close_chat(hwnd, latest):
+                        self._sleep(0.2)
+                        continue
                     screen = self.detector.tracker.screen
                     # A card pick is time-limited: act on the first read of it
                     # instead of waiting for it to be confirmed.
@@ -312,6 +315,24 @@ class MacroThread(QThread):
             return False
         self.log.emit("Closing the leaderboard.", "Info")
         inp.click(hwnd, *det.leaderboard_close)
+        self._park_mouse(hwnd)
+        return True
+
+    def _close_chat(self, hwnd: int, det: Detection | None) -> bool:
+        """Close the chat window if it's open: it covers the left card (and
+        its text, e.g. the Star Golem card). Returns True if it clicked."""
+        if det is None or det.chat_toggle is None:
+            self._chat_tries = 0
+            return False
+        if not self._cooldown("chat", 3.0):
+            return False
+        self._chat_tries = getattr(self, "_chat_tries", 0) + 1
+        if self._chat_tries > 3:
+            if self._chat_tries == 4:
+                self.log.emit("The chat won't close — leaving it open.", "Warn")
+            return False
+        self.log.emit("Closing the chat.", "Info")
+        inp.click(hwnd, *det.chat_toggle)
         self._park_mouse(hwnd)
         return True
 
