@@ -571,10 +571,6 @@ class MacroThread(QThread):
 
             return
 
-        if not typed:
-            self._say("Verification — your turn: type the number")
-            return
-
         if submit is None or typed == getattr(self, "_captcha_submitted", None):
             return
 
