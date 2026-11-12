@@ -214,6 +214,7 @@ class MacroThread(QThread):
         self._new_match()
         self._maps = load_maps()
         self._map = None
+        self._map_walked = False    # the thread is reused on every F1: start fresh
         if self._maps:
             self.log.emit(f"Placement zones saved for: {', '.join(m.name for m in self._maps)}.", "Info")
         wave = self.detector.tracker.wave
@@ -572,27 +573,37 @@ class MacroThread(QThread):
 
     def _walk_map(self, hwnd: int, walk: dict) -> None:
         """Walk to the spot the map's zones were drawn from: hold the key for
-        `seconds`, tapping Space now and then if `jump` is set."""
+        `seconds`, then (still holding it) jump `jumps` times. `"jump": true`
+        instead taps Space all the way."""
         key = str(walk.get("key", "d")).lower()
         seconds = float(walk.get("seconds", 4.0))
-        jump = bool(walk.get("jump", False))
-        self._say(f"Walking to the {self._map.name} spot ({key.upper()} for {seconds:g}s"
-                  f"{' + jumping' if jump else ''})")
+        jumps = int(walk.get("jumps", 0))
+        spam = bool(walk.get("jump", False))
+        extra = f", then jump {jumps}x" if jumps else (" + jumping" if spam else "")
+        self._say(f"Walking to the {self._map.name} spot ({key.upper()} for {seconds:g}s{extra})")
         inp.focus(hwnd)
         inp.key_down(key)
         try:
             end = time.monotonic() + seconds
             while time.monotonic() < end and not self.isInterruptionRequested():
-                if jump:
-                    inp.key_down("space")
-                    self.msleep(60)
-                    inp.key_up("space")
+                if spam:
+                    self._tap_space()
                     self.msleep(190)
                 else:
                     self.msleep(50)
+            for _ in range(jumps):
+                if self.isInterruptionRequested():
+                    break
+                self._tap_space()
+                self.msleep(500)    # land before the next jump
         finally:
             inp.key_up(key)
         self._sleep(0.6)    # let the camera settle before reading the screen
+
+    def _tap_space(self) -> None:
+        inp.key_down("space")
+        self.msleep(60)
+        inp.key_up("space")
 
     def _unit_label(self, key: str) -> str:
         name = self.settings.unit_names.get(key, "").strip()

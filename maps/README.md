@@ -21,10 +21,11 @@ units can't actually go there.
 A map can have a walk in its JSON, done once per match before the first unit:
 
 ```json
-"walk": { "key": "d", "seconds": 4.0, "jump": true }
+"walk": { "key": "d", "seconds": 4.0, "jumps": 2 }
 ```
 
-Hold `key` for `seconds` (tapping Space if `jump`), then place. The zones must
+Hold `key` for `seconds`, then (still holding it) jump `jumps` times, then
+place. `"jump": true` instead taps Space the whole way. The zones must
 be drawn from where the walk ends.
 
 Maps that are better with a short walk first (tip from a friend, not set up
@@ -39,4 +40,4 @@ yet — add a walk when we get them):
 - Haunted Mansion (zones saved, no walk yet)
 - Adventurer Town
 
-Set up: Snowy Town (D + jump, 4 s).
+Set up: Snowy Town (D for 4 s, then jump twice).

@@ -393,7 +393,7 @@
   "walk": {
     "key": "d",
     "seconds": 4.0,
-    "jump": true
+    "jumps": 2
   },
   "titlebar": 23
 }
