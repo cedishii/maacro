@@ -2,6 +2,7 @@
 their vote counts, and which one to pick.
 
 Rule (see FLOW.md):
+0. A "Star Golem +100%" card (Starfall weather) → always pick it.
 1. Any non-red card (green = buff) → pick it, green first.
 2. All red → the card with the most votes; tie → the first of the highest.
 """
@@ -34,6 +35,12 @@ class Card:
     text_box: Box = (0, 0, 0, 0)    # where the card's own text is
     text: str = ""                  # e.g. "Enemy Health I +30% SummerPearls +50% Enemy Health"
     pearls: int | None = None       # the "+30% SummerPearls" bonus
+
+    @property
+    def star_golem(self) -> bool:
+        """The Starfall card with "Star Golem +100%" chance. "golem" alone
+        counts too, in case OCR garbles "Star"."""
+        return "golem" in re.sub(r"[^a-z]", "", self.text.lower())
 
     @property
     def debuff_rank(self) -> int:
@@ -147,6 +154,10 @@ def choose_card(cards: list[Card]) -> tuple[Card, str] | None:
     """The card to vote for and a short reason, or None if there are no cards."""
     if not cards:
         return None
+    # 0. Starfall's Star Golem card beats everything.
+    golem = next((c for c in cards if c.star_golem), None)
+    if golem is not None:
+        return golem, "Star Golem card"
     # 1. Buffs: green first, then blue / any other non-red colour.
     for wanted, label in (("green", "green card"), ("other", "blue/other card")):
         special = [c for c in cards if c.color == wanted]
