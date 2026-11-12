@@ -315,6 +315,25 @@ class MacroThread(QThread):
         det = self._fresh("lobby")
         if det is None or not self._cooldown("play", 12):
             return
+        clicked_at = time.monotonic()
+        if not self.click_play(hwnd, det):
+            if not self.isInterruptionRequested():
+                self._last_done["play"] = time.monotonic() - 12 + 1.5   # retry in 1.5 s
+            return
+        if not self._sleep(max(0.0, self.settings.teleport_wait - (time.monotonic() - clicked_at))):
+            return
+        self._walk_to_ring(hwnd)
+
+    def click_play(self, hwnd: int, det: Detection | None = None) -> bool:
+        """Find the lobby's Play button, click it, and check that it worked.
+
+        `det` is a lobby detection to find the button in (the newest one if
+        not given). Returns True once the lobby menu has gone (the game is
+        teleporting you), False if the button wasn't found or the click missed.
+        """
+        det = det or self.detector.latest
+        if det is None:
+            return False
         play = self._line(det, "play", exact=True)
         if play is None:
             # Fall back to the menu layout: Play sits right of Items, like Store sits right of Units.
@@ -323,22 +342,17 @@ class MacroThread(QThread):
             store = self._line(det, "store", exact=True)
             if not (items and units and store):
                 self._say("In lobby — can't find the Play button", level="Warn")
-                return
+                return False
             play = OcrLine("Play", int(items.x + store.center_x - units.center_x), items.y, items.w, items.h)
         self._say("In lobby → clicking Play")
         self._click_line(hwnd, play, "Play")
-        clicked_at = time.monotonic()
-        # Only walk once the lobby menu is gone: if the click missed (often the
-        # first click just brings Roblox to the front), walking would only run
-        # around the lobby. Try again shortly instead.
-        if not self._left_lobby(clicked_at, timeout=self.settings.teleport_wait + 3):
-            if not self.isInterruptionRequested():
-                self.log.emit("Play click didn't register — clicking again.", "Warn")
-                self._last_done["play"] = time.monotonic() - 12 + 1.5   # retry in 1.5 s
-            return
-        if not self._sleep(max(0.0, self.settings.teleport_wait - (time.monotonic() - clicked_at))):
-            return
-        self._walk_to_ring(hwnd)
+        # Only count it once the lobby menu is gone: a click can miss (often the
+        # first one just brings Roblox to the front).
+        if self._left_lobby(time.monotonic(), timeout=self.settings.teleport_wait + 3):
+            return True
+        if not self.isInterruptionRequested():
+            self.log.emit("Play click didn't register — clicking again.", "Warn")
+        return False
 
     def _left_lobby(self, after: float, timeout: float) -> bool:
         """True once two reads of frames taken after `after` aren't the lobby
@@ -416,12 +430,17 @@ class MacroThread(QThread):
 
         time.sleep(0.2)
 
+        # Click somewhere outside the input field to remove focus
+        pyautogui.click(740, 400)
+
+        time.sleep(0.2)
+
         for pos in [
-            (645, 532),
-            (655, 532),
-            (650, 535),
-            (645, 538),
-            (655, 538),
+            (740, 675),
+            (760, 675),
+            (780, 675),
+            (750, 675),
+            (770, 675),
         ]:
             pyautogui.click(*pos)
             time.sleep(0.2)
