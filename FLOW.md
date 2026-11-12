@@ -42,7 +42,7 @@ Reference screenshots are in `screens/`.
 - Keys: **R** = upgrade, **X** = sell (available as actions).
 
 ### Card pick — every few waves (`07_card_pick`, `08_card_pick_green`)
-0. A **Star Golem +100%** card (Starfall weather; "golem" in its text) → always pick it.
+0. A **Star Golem +100%** card (Starfall weather: "Wishing Star … Starfall Card"; any of "golem", "Wishing Star", "Starfall Card" in its text) → always pick it.
 1. Any **green / non-red** card → pick it.
 2. All red → pick the card with the **most votes** (tie → whichever is simplest, e.g. the first highest).
 3. Click **Vote**.

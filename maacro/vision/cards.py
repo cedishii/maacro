@@ -38,9 +38,11 @@ class Card:
 
     @property
     def star_golem(self) -> bool:
-        """The Starfall card with "Star Golem +100%" chance. "golem" alone
-        counts too, in case OCR garbles "Star"."""
-        return "golem" in re.sub(r"[^a-z]", "", self.text.lower())
+        """The Starfall card: "Wishing Star / 100% Star Golem Chance /
+        Starfall Card". Any one of its words is enough, in case OCR misses
+        the others (it often skips the small "100% … Chance" line)."""
+        text = re.sub(r"[^a-z]", "", self.text.lower())
+        return any(word in text for word in ("golem", "wishingstar", "starfallcard"))
 
     @property
     def debuff_rank(self) -> int:
