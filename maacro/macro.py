@@ -59,6 +59,9 @@ def narrow_to_words(line: OcrLine, keyword: str) -> OcrLine:
     return OcrLine(" ".join(w.text for w in best), left, top, right - left, bottom - top, best)
 
 
+UPGRADE_RECHECK = 40     # seconds before looking at a "maxed" manager again
+
+
 @dataclass
 class MatchState:
     """What's been done in the current match."""
@@ -71,7 +74,10 @@ class MatchState:
     spots: list[tuple[float, float]] = field(default_factory=list)
     spot_cursor: int = 0            # where the next placing try continues in the spot list
     upgrades_done: bool = False
+    upgrades_done_at: float = 0.0   # when it last looked maxed (checked again later)
+    maxed_logged: bool = False
     no_upgrade_reads: int = 0
+    close_tries: int = 0            # F presses to close a manager that's in the way
     card_voted: bool = False
     card_clicked: bool = False
     vote_target: tuple[float, float] | None = None
@@ -580,6 +586,11 @@ class MacroThread(QThread):
             if self._map is not None and self._map.walk:
                 self._walk_map(hwnd, self._map.walk)
                 return
+        m.close_tries = 0
+        # "Maxed" is only a guess from a few reads (grey buttons + "Upg" not
+        # read look the same as Max), so check the manager again now and then.
+        if m.upgrades_done and time.monotonic() - m.upgrades_done_at > UPGRADE_RECHECK:
+            m.upgrades_done = False
         if cfg.place_units and m.pending:
             self._place_next(hwnd)
         elif cfg.upgrade_units and not m.upgrades_done:
@@ -812,8 +823,18 @@ class MacroThread(QThread):
 
     def _on_unit_manager(self, hwnd: int) -> None:
         m, cfg = self.match, self.settings
+        if cfg.upgrade_units and not m.upgrades_done and cfg.place_units and m.pending \
+                and m.close_tries >= 3:
+            # Started with the manager open (F3 → F1 mid-match) and it won't
+            # close: the units are most likely placed already, so upgrade.
+            self.log.emit("The unit manager won't close — assuming the units are "
+                          "already placed and upgrading.", "Warn")
+            m.pending.clear()
         if not cfg.upgrade_units or m.upgrades_done or (cfg.place_units and m.pending):
-            if self._cooldown("close_manager", 4):
+            if self._cooldown("close_manager", 3):
+                m.close_tries += 1
+                if m.close_tries == 1 and m.pending:
+                    self.log.emit("Closing the unit manager to place units first.", "Info")
                 inp.press(hwnd, "f")     # F toggles the unit manager
             return
         if self._peek_for_card_pick(hwnd):
@@ -832,13 +853,19 @@ class MacroThread(QThread):
         upg_text = bool(text_buttons) or any(_norm(l.text).startswith("upg") for l in det.lines)
         if not buttons:
             # No green button and no "Upg" text (grey = can't afford yet) on
-            # 4 reads in a row → everything is Max.
+            # several reads in a row → probably everything is Max. Checked
+            # again every UPGRADE_RECHECK seconds in case it was a misread.
             m.no_upgrade_reads = 0 if upg_text else m.no_upgrade_reads + 1
             if upg_text:
                 self._say("Upgrading — waiting for money", log=False)
-            if m.no_upgrade_reads >= 4:
+            if m.no_upgrade_reads >= 6:
                 m.upgrades_done = True
-                self.log.emit("All units are maxed out.", "Info")
+                m.upgrades_done_at = time.monotonic()
+                m.no_upgrade_reads = 0
+                if not m.maxed_logged:
+                    m.maxed_logged = True
+                    self.log.emit(f"All units look maxed out — checking again every "
+                                  f"{UPGRADE_RECHECK} s.", "Info")
                 self._say("All units maxed — watching the match")
                 inp.press(hwnd, "f")
             return
