@@ -588,6 +588,7 @@ class MacroThread(QThread):
             if time.monotonic() - self._manager_seen_at > 6 and self._cooldown("open_manager", 6):
                 self._say("Opening the unit manager to upgrade")
                 inp.press(hwnd, "f")
+                self._last_done["card_peek"] = time.monotonic()   # first peek in 5 s
         else:
             wave = self.detector.tracker.wave
             det = self.detector.latest
@@ -791,11 +792,31 @@ class MacroThread(QThread):
             return 1920, 1080
         return frame.shape[1], frame.shape[0]
 
+    def _peek_for_card_pick(self, hwnd: int) -> bool:
+        """The unit manager hides a card pick (its text can't be read), so
+        every few seconds close it and look. A card pick → leave it closed
+        (the card comes first; upgrading resumes after). None → reopen.
+        Returns True if it pressed F."""
+        if not self._cooldown("card_peek", 5.0):
+            return False
+        inp.press(hwnd, "f")            # F toggles the manager: close
+        self.msleep(350)                # let it slide away
+        det = self._wait_after(time.monotonic(), timeout=1.5)
+        if det is not None and det.screen == "card_pick":
+            self.log.emit("Card pick behind the unit manager — picking first.", "Info")
+            return True
+        inp.press(hwnd, "f")            # nothing: open it again
+        self._manager_seen_at = time.monotonic()
+        self.msleep(300)
+        return True
+
     def _on_unit_manager(self, hwnd: int) -> None:
         m, cfg = self.match, self.settings
         if not cfg.upgrade_units or m.upgrades_done or (cfg.place_units and m.pending):
             if self._cooldown("close_manager", 4):
                 inp.press(hwnd, "f")     # F toggles the unit manager
+            return
+        if self._peek_for_card_pick(hwnd):
             return
         det = self._fresh("unit_manager")
         _, frame = self.capture.latest_frame()
