@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 import time
+import pyautogui
 import traceback
 from pathlib import Path
 import winsound
@@ -21,6 +22,7 @@ from .control import input as inp
 from .detector import DetectorThread
 from .maps import MapZones, find_map, load_maps, spread
 from .runs import read_run, save_run
+from screen_numbers import read_number, type_text
 from .placement import drop_red_spots, find_green_buttons, placeable_spots, spots_to_try, upgrade_order
 
 SPOTS_PER_TRY = 12      # then give up for now, so card picks etc. aren't blocked
@@ -410,6 +412,41 @@ class MacroThread(QThread):
 
         self._say("Joining matchmaking")
         self._click_line(hwnd, button, "Find Match")
+
+        time.sleep(1)
+
+        screenshot = pyautogui.screenshot(
+            region=(470, 335, 600, 300)
+        )
+
+        number = read_number(image=screenshot)
+
+        if not number:
+            self._say("Failed to read number")
+            return
+
+        self._say(f"Read number: {number}")
+
+        type_text(
+            number,
+            click_at=(770, 470)
+        )
+
+        time.sleep(0.5)
+
+        det = self._fresh("captcha")
+        if det is None:
+            self._say("Captcha not found")
+            return
+
+        submit = self._line(det, "submit", exact=True)
+
+        if submit is None:
+            self._say("Submit button not found")
+            return
+
+        self._say("Verification typed → clicking Submit")
+        self._click_line(hwnd, submit, "Submit")
 
     def _on_captcha(self, hwnd: int) -> None:
         """The verification is the player's to type. Once they've typed
