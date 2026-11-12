@@ -84,6 +84,7 @@ class MacroThread(QThread):
     status = Signal(str)            # what the macro is doing right now
     log = Signal(str, str)          # message, level
     run_recorded = Signal(object)   # RunRecord, when a run ends
+    drop_found = Signal(str, str)   # item name, rarity (either may be "")
 
     def __init__(self, capture: CaptureThread, detector: DetectorThread,
                  settings: MacroConfig | None = None, parent=None):
@@ -287,6 +288,7 @@ class MacroThread(QThread):
             self._drop_seen = det.drop
             name, rarity = det.drop
             self.log.emit(f"Drop: {name or 'item'}{f' ({rarity})' if rarity else ''}", "Info")
+            self.drop_found.emit(name, rarity)
         if not self._cooldown("drop", 0.8):
             return False
         self._drop_clicks = getattr(self, "_drop_clicks", 0) + 1

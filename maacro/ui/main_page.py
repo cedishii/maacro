@@ -58,6 +58,7 @@ class MainPage(QWidget):
         self.macro.status.connect(self.action_value.setText)
         self.macro.log.connect(self.log_panel.log)
         self.macro.finished.connect(self._on_macro_finished)
+        self.macro.drop_found.connect(self.stats.add_drop)
         self.macro.run_recorded.connect(
             lambda record: self.stats.add_pearls(record.pearls) if record.pearls else None)
 
@@ -132,13 +133,21 @@ class MainPage(QWidget):
         box_layout.addWidget(row)
         row, self.pearls_value = key_value_row("SummerPearls Earned", "0")
         box_layout.addWidget(row)
+        row, self.charms_value = key_value_row("Charms Dropped", "0")
+        box_layout.addWidget(row)
+        row, self.portals_value = key_value_row("Portals Dropped", "0")
+        box_layout.addWidget(row)
+        # Every drop by name, most common first.
+        self.drops_list = QLabel("No drops yet", objectName="Muted")
+        self.drops_list.setWordWrap(True)
+        box_layout.addWidget(self.drops_list)
 
         # Wins/losses are counted automatically; these fix a wrong count.
         manual = QHBoxLayout()
         for text, slot, tip in (
             ("+ Win", self._manual_win, "Add a win by hand (if one was missed)."),
             ("+ Loss", self._manual_loss, "Add a loss by hand (if one was missed)."),
-            ("Reset", self._reset_stats, "Set wins, losses and session time back to zero."),
+            ("Reset", self._reset_stats, "Set wins, losses, drops and session time back to zero."),
         ):
             button = QPushButton(text)
             button.setToolTip(tip)
@@ -216,6 +225,10 @@ class MainPage(QWidget):
         self.win_rate_value.setText(f"{s.win_rate:.1f}%" if s.runs else "0%")
         self.runs_value.setText(str(s.runs))
         self.pearls_value.setText(f"{s.pearls:,}")
+        self.charms_value.setText(str(s.drop_count("charm")))
+        self.portals_value.setText(str(s.drop_count("portal")))
+        drops = sorted(s.drops.items(), key=lambda kv: -kv[1])
+        self.drops_list.setText("\n".join(f"{label} ×{n}" for label, n in drops) or "No drops yet")
         color = theme.WIN if s.running else theme.LOSS
         self.status_dot.setStyleSheet(f"color: {color}; background: transparent;")
         self.status_text.setText("Running" if s.running else "Not running")

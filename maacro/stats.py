@@ -14,6 +14,8 @@ class SessionStats(QObject):
         self.wins = 0
         self.losses = 0
         self.pearls = 0             # SummerPearls earned this session
+        # Item drops this session: "Name (Rarity)" → how many.
+        self.drops: dict[str, int] = {}
         self._elapsed_before = 0.0   # seconds from earlier start/stop periods
         self._started_at: float | None = None
 
@@ -37,6 +39,15 @@ class SessionStats(QObject):
     def add_pearls(self, amount: int) -> None:
         self.pearls += amount
         self.changed.emit()
+
+    def add_drop(self, name: str, rarity: str) -> None:
+        label = (name or "Item") + (f" ({rarity})" if rarity else "")
+        self.drops[label] = self.drops.get(label, 0) + 1
+        self.changed.emit()
+
+    def drop_count(self, word: str) -> int:
+        """How many drops have `word` (e.g. "charm", "portal") in their name."""
+        return sum(n for label, n in self.drops.items() if word in label.lower())
 
     # --- session time --------------------------------------------------
     @property
@@ -68,6 +79,7 @@ class SessionStats(QObject):
     def reset(self) -> None:
         self.wins = self.losses = 0
         self.pearls = 0
+        self.drops = {}
         self._elapsed_before = 0.0
         if self._started_at is not None:
             self._started_at = time.monotonic()
