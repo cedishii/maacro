@@ -1,6 +1,6 @@
 """The run loop: looks at the current screen and does the next step.
 
-Lobby → Play → walk into the ring → Find Match → (captcha: player's turn)
+Lobby → Play → walk into the ring → Find Match → (captcha: player types, macro submits)
 → vote Yes → match (place units → upgrade to Max, pick cards) → Next
 → Return to lobby → repeat.
 """
@@ -10,11 +10,9 @@ import math
 import time
 import traceback
 from pathlib import Path
-import pyautogui
 import winsound
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
-from screen_numbers import read_number, type_text
 from PySide6.QtCore import QThread, Signal
 
 from .capture import CaptureThread
@@ -26,6 +24,7 @@ from .runs import read_run, save_run
 from .placement import drop_red_spots, find_green_buttons, placeable_spots, spots_to_try, upgrade_order
 
 SPOTS_PER_TRY = 12      # then give up for now, so card picks etc. aren't blocked
+CAPTCHA_SUBMIT_AFTER = 1.5   # seconds the typed answer must stay the same before Submit
 from .vision.cards import (choose_card, find_cards, needs_votes, predicted_vote_button, read_card_texts,
                            read_votes, vote_button)
 from .vision.numbers import GuardedNumberReader, make_number_reader
@@ -409,43 +408,43 @@ class MacroThread(QThread):
         self._say("Joining matchmaking")
         self._click_line(hwnd, button, "Find Match")
 
-        time.sleep(1)
-
-        screenshot = pyautogui.screenshot(
-           region = (470, 335, 600, 300)
-        )
-
-        number = read_number(image=screenshot)
-
-        if not number:
-            self._say("Failed to read number")
+    def _on_captcha(self, hwnd: int) -> None:
+        """The verification is the player's to type. Once they've typed
+        something and stopped for a moment, press Submit for them."""
+        det = self._fresh("captcha")
+        if det is None:
             return
+        submit = self._line(det, "submit", exact=True)
+        typed = self._typed_answer(det, submit)
+        now = time.monotonic()
+        if typed != getattr(self, "_captcha_typed", None):
+            self._captcha_typed, self._captcha_typed_at = typed, now
+        if not typed:
+            self._say("Verification — your turn: type the number")
+            return
+        if submit is None or typed == getattr(self, "_captcha_submitted", None):
+            return
+        if now - self._captcha_typed_at < CAPTCHA_SUBMIT_AFTER:
+            self._say("Verification — waiting for you to finish typing", log=False)
+            return
+        self._say("Verification typed → clicking Submit")
+        self._click_line(hwnd, submit, "Submit")
+        self._captcha_submitted = typed     # retype (e.g. a typo) and it submits again
 
-        self._say(f"Read number: {number}")
-
-        type_text(
-            number,
-            click_at=(770, 470)
-        )
-
-        time.sleep(0.2)
-
-        # Click somewhere outside the input field to remove focus
-        pyautogui.click(740, 400)
-
-        time.sleep(0.2)
-
-        for pos in [
-            (740, 675),
-            (760, 675),
-            (780, 675),
-            (750, 675),
-            (770, 675),
-        ]:
-            pyautogui.click(*pos)
-            time.sleep(0.2)
-
-        self._say("Submitted")
+    @staticmethod
+    def _typed_answer(det: Detection, submit: OcrLine | None) -> str:
+        """What's in the answer box: the lower of the digit lines above the
+        Submit button (the upper, bigger one is the number to copy)."""
+        if submit is None:
+            return ""
+        digit_lines = [l for l in det.lines
+                       if l.y + l.h <= submit.y and submit.y - l.y < 6 * submit.h
+                       and any(c.isdigit() for c in l.text)
+                       and sum(c.isdigit() for c in l.text) >= len(l.text.replace(" ", "")) / 2]
+        if len(digit_lines) < 2:
+            return ""       # only the number to copy is showing: nothing typed yet
+        box = max(digit_lines, key=lambda l: l.y)
+        return "".join(c for c in box.text if c.isdigit())
 
     def _on_match_found(self, hwnd: int) -> None:
         self._say("Match found — teleporting")

@@ -251,7 +251,7 @@ class MainPage(QWidget):
             if value != "unknown":
                 self.log_panel.log(f"Screen: {label}")
             if value == "captcha":
-                self.log_panel.log("Captcha showing — type the number and press Submit.", "Warn")
+                self.log_panel.log("Captcha showing — type the number; MAACRO presses Submit once you stop typing.", "Warn")
         elif kind == "wave":
             self.wave_value.setText("—" if value is None else str(value))
         elif kind == "map":
