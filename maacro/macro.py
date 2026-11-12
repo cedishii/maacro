@@ -256,6 +256,8 @@ class MacroThread(QThread):
                         self._matchmaking_at = time.monotonic()
                     elif self.detector.tracker.screen in ("in_match", "vote_start"):
                         self._matchmaking_at = -1e9
+                    if self.detector.tracker.screen in ("end", "after_end"):
+                        self._ended_at = time.monotonic()
                     # Out of matchmaking: the stuck-captcha timer starts over next time.
                     if self.detector.tracker.screen in ("match_found", "loading", "vote_start",
                                                         "in_match", "lobby"):
@@ -621,6 +623,12 @@ class MacroThread(QThread):
     # --- in the match: place → upgrade → watch -------------------------
     def _on_in_match(self, hwnd: int) -> None:
         m, cfg = self.match, self.settings
+        if time.monotonic() - getattr(self, "_ended_at", -1e9) < 15:
+            # The end screens still show "Wave 50" and can be misread as the
+            # match for a moment: don't press F (the unit manager would cover
+            # the Return to lobby button) or place anything.
+            self._say("Match over — waiting for the lobby", log=False)
+            return
         if cfg.place_units and m.pending and not m.zoomed:
             m.zoomed = True
             if cfg.zoom_out_seconds > 0:
