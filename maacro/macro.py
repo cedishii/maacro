@@ -62,6 +62,7 @@ def narrow_to_words(line: OcrLine, keyword: str) -> OcrLine:
 UPGRADE_RECHECK = 40     # seconds before looking at a "maxed" manager again
 PLACE_RETRY_PAUSE = 20   # seconds of upgrading before trying stuck units again
 MISSES_BEFORE_NEXT = 4   # placing passes without luck before trying the next unit
+WALK_WAIT = 90           # most seconds to wait for "Wave" to show before walking anyway
 WALK_MAX_WAVE = 3        # later than this, the match is under way: don't walk
 
 
@@ -94,6 +95,7 @@ class MatchState:
     recorded: bool = False          # this run's rewards are noted
     card_seen_at: float = 0.0       # when the current card pick appeared
     voted_start: bool = False
+    started_at: float = field(default_factory=time.monotonic)
 
 
 class MacroThread(QThread):
@@ -592,8 +594,15 @@ class MacroThread(QThread):
         # If the map isn't recognised yet, keep checking until the first unit
         # goes down (walking after that would leave placed units behind).
         if cfg.place_units and m.pending and not self._map_walked and (self._map is not None or m.placed):
-            self._map_walked = True
             wave = self.detector.tracker.wave
+            if self._map is not None and self._map.walk and wave is None and not m.placed \
+                    and time.monotonic() - m.started_at < WALK_WAIT:
+                # Before the vote-start countdown is over (no "Wave" on screen
+                # yet) the character can't move: wait, and walk once it starts.
+                self._say(f"Waiting for the match to start to walk to the {self._map.name} spot",
+                          log=False)
+                return
+            self._map_walked = True
             if self._map is not None and self._map.walk:
                 # Started mid-match (F3 → F1): the player is no longer at the
                 # spawn, so the walk would only take them somewhere wrong.
