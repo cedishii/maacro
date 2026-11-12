@@ -371,5 +371,6 @@
     1358,
     777
   ],
-  "source": "haunted_mansion_source.png"
+  "source": "haunted_mansion_source.png",
+  "titlebar": null
 }

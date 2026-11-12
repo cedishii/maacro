@@ -394,5 +394,6 @@
     "key": "d",
     "seconds": 4.0,
     "jump": true
-  }
+  },
+  "titlebar": 23
 }
