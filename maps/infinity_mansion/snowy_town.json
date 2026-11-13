@@ -317,5 +317,10 @@
     1526,
     597
   ],
-  "titlebar": 23
+  "titlebar": 23,
+  "walk": {
+    "key": "d",
+    "seconds": 4.0,
+    "jumps": 2
+  }
 }

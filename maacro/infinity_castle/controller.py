@@ -115,6 +115,16 @@ class InfinityCastleThread(MacroThread):
                     return int(match.group(1))
         return None
 
+    def _walk_map(self, hwnd: int, walk: dict, what: str | None = None) -> None:
+        """After the map walk, zoom out again: the room's start can reset the
+        camera after the first zoom (it stayed close up in room 9)."""
+        super()._walk_map(hwnd, walk, what)
+        seconds = getattr(self.settings, "zoom_out_seconds", 0)
+        if what is None and seconds > 0 and not self.isInterruptionRequested():
+            self._say("Zooming out again after the walk (O)")
+            inp.press(hwnd, "o", hold=seconds)
+            self._sleep(0.5)
+
     def _place_next(self, hwnd: int) -> None:
         """Damage units (path_units) take the circled path zones; the others
         are placed with the zones hidden, so they don't fill the path spots."""
