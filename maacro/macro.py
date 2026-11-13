@@ -76,6 +76,8 @@ STUCK_LIMITS = {
     "match_found": 120, "loading": 180, "disconnected": 60, "unknown": 60,
 }
 RECOVER_EVERY = 10
+MATCHMAKING_WAIT = 20    # s in the lobby after matchmaking without a teleport → start again from Play
+BLOCKED_ALERT = 120      # s units have been waiting behind a manager that won't close → beep
 ALERT_AFTER = 600        # stuck this long → beep and ask the player for help
 
 
@@ -95,6 +97,9 @@ class MatchState:
     maxed_logged: bool = False
     no_upgrade_reads: int = 0
     close_tries: int = 0            # F presses to close a manager that's in the way
+    close_rounds: int = 0           # times the manager didn't close (panel closed / deselected after each)
+    blocked_since: float = 0.0      # units waiting behind a manager that won't close, since
+    blocked_alerted: bool = False
     misses: dict[str, int] = field(default_factory=dict)  # passes in a row without placing, per key
     # Units that had their turn and didn't go down: "room" = clicked spots,
     # none worked; "other" = no placement mode (money, unreadable counter).
@@ -533,9 +538,16 @@ class MacroThread(QThread):
     def _on_lobby(self, hwnd: int) -> None:
         # After the verification / "Match found", the lobby shows again for a
         # few seconds before the teleport: don't click Play then.
-        if time.monotonic() - self._matchmaking_at < 30:
+        waited = time.monotonic() - self._matchmaking_at
+        if waited < MATCHMAKING_WAIT:
             self._say("Matchmaking — waiting for the teleport")
             return
+        if waited < 1e6:
+            # Matchmaking ran but no teleport came: start over from Play.
+            self.log.emit(f"No teleport {MATCHMAKING_WAIT} s after matchmaking — "
+                          "starting again from Play.", "Warn")
+            self._matchmaking_at = -1e9
+            self._last_done.pop("play", None)
         det = self._fresh("lobby")
         if det is None or not self._cooldown("play", 12):
             return
@@ -906,6 +918,7 @@ class MacroThread(QThread):
         m.counts[key] = placed
         if before is not None and placed > before:
             m.placed += placed - before
+            m.blocked_since, m.blocked_alerted, m.close_rounds = 0.0, False, 0
             if spot is not None:
                 m.spots.append(spot)
             self.log.emit(f"Placed {self._unit_label(key)} ({placed}/{total})", "Info")
@@ -1079,16 +1092,76 @@ class MacroThread(QThread):
         self.msleep(300)
         return True
 
+    def _close_unit_panel(self, hwnd: int) -> bool:
+        """Close a placed unit's own panel (left side: "UPG …", "Max Upgrade",
+        "DMG … | Takedowns …") by its red X, just above the right end of the
+        "UPG" line. Only the left of the screen is searched: the unit
+        manager's red X buttons (right side) would remove units. True if clicked."""
+        det = self.detector.latest
+        _, frame = self.capture.latest_frame()
+        if det is None or frame is None:
+            return False
+        width = frame.shape[1]
+        left = [l for l in det.lines if l.center_x < 0.4 * width]
+        upg = next((l for l in left if _norm(l.text).startswith("upg")), None)
+        if upg is None or not any(w in l.text.lower() for l in left for w in ("takedown", "dmg")):
+            return False
+        bgr = frame[:, :int(0.4 * width), :3].astype(int)
+        red = ((bgr[..., 2] > 180) & (bgr[..., 1] < 70) & (bgr[..., 0] < 70)).astype("uint8")
+        count, _, stats, _ = cv2.connectedComponentsWithStats(red)
+        best, best_d = None, 1e9
+        for x, y, w, h, area in stats[1:count]:
+            cx, cy = x + w / 2, y + h / 2
+            if not (25 <= w <= 60 and 18 <= h <= 45 and area > 300):
+                continue
+            if abs(cx - (upg.x + upg.w)) > 60 or not (upg.y - 60 < cy < upg.y + 15):
+                continue
+            d = abs(cx - (upg.x + upg.w)) + abs(cy - upg.y)
+            if d < best_d:
+                best, best_d = (cx, cy), d
+        if best is None:
+            return False
+        inp.click(hwnd, *best)
+        self._park_mouse(hwnd)
+        return True
+
     def _on_unit_manager(self, hwnd: int) -> None:
         m, cfg = self.match, self.settings
         if cfg.upgrade_units and not m.upgrades_done and cfg.place_units and m.pending \
                 and m.close_tries >= 3:
-            # Started with the manager open (F3 → F1 mid-match) and it won't
-            # close: the units are most likely placed already, so upgrade.
+            now = time.monotonic()
+            m.close_tries = 0
+            m.blocked_since = m.blocked_since or now
+            if now - m.blocked_since > BLOCKED_ALERT and not m.blocked_alerted:
+                m.blocked_alerted = True
+                self.log.emit(f"{len(m.pending)} unit(s) have been waiting to be placed for "
+                              f"{BLOCKED_ALERT // 60} min (the unit manager won't close) — "
+                              "please check the game.", "Error")
+                try:
+                    winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+                except Exception:
+                    pass
+            m.close_rounds += 1
+            if m.close_rounds % 3 != 0:
+                # A unit's own panel (opened by a click that landed on a unit)
+                # keeps F from closing the manager: close that panel, or click
+                # an empty spot to deselect, then press F again.
+                if self._close_unit_panel(hwnd):
+                    self.log.emit("A unit's panel was open — closed it; closing the unit manager again.",
+                                  "Info")
+                else:
+                    width, height = self._frame_size()
+                    self.log.emit("The unit manager won't close — clicking an empty spot to "
+                                  "deselect, then trying again.", "Info")
+                    inp.click(hwnd, width * 0.5, height * 0.12)
+                    self._park_mouse(hwnd)
+                self._last_done.pop("close_manager", None)
+                return
+            # Still won't close (e.g. started with the manager open, units
+            # already placed): upgrade a while, then try placing again.
             self.log.emit("The unit manager won't close — upgrading for "
                           f"{PLACE_RETRY_PAUSE} s, then placing again.", "Warn")
-            m.close_tries = 0
-            m.place_paused_until = time.monotonic() + PLACE_RETRY_PAUSE
+            m.place_paused_until = now + PLACE_RETRY_PAUSE
         if not cfg.upgrade_units or m.upgrades_done or (cfg.place_units and m.pending
                                                         and not self._place_paused()):
             if self._cooldown("close_manager", 3):
