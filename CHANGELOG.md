@@ -19,6 +19,10 @@
   (e.g. 3/3 for Phoenix).
 
 **Fixed**
+- **Card picks behind the unit manager** (all modes): the 5-second peek watched only the
+  first screen read after closing the manager, so a card pick that showed up a moment
+  later was covered again and skipped (seen at wave 9). It now watches for 2.5 s, and a
+  card pick seen while upgrading closes the manager first.
 - Infinity Castle: each room's map is recognised again (it kept Snowy Town's zones and
   walk for every later room). Snowy Town walks right like Summer's and zooms out again.
 

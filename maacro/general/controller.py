@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from ..control import input as inp
 from ..macro import MacroThread
+from ..card_first import CardFirst
 from ..upgrades import ScrollingUpgrades
 from ..vision.screens import Detection
 from .config import GeneralConfig
@@ -27,7 +28,7 @@ PLAYER_SCREENS = ("lobby", "join_matchmaking", "captcha", "match_found", "loadin
 GAME_SCREENS = ("vote_start", "in_match", "unit_manager", "card_pick")
 
 
-class GeneralThread(ScrollingUpgrades, MacroThread):   # ScrollingUpgrades: more than 6 units
+class GeneralThread(CardFirst, ScrollingUpgrades, MacroThread):   # ScrollingUpgrades: more than 6 units
     ALLOW_LOBBY_PLAY = False
     ALLOW_RETURN_TO_LOBBY = False
 

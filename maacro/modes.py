@@ -9,6 +9,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from .card_first import SummerThread
 from .config import MacroConfig
 from .general.config import GeneralConfig
 from .general.controller import GeneralThread
@@ -30,7 +31,7 @@ class Mode:
 
 
 MODES = (
-    Mode("summer", "Summer Event", MacroThread, MacroConfig),
+    Mode("summer", "Summer Event", SummerThread, MacroConfig),
     Mode("infinity_castle", "Infinity Castle", InfinityCastleThread, InfinityConfig),
     # Already leaves every choice to the player, so the Party Member role adds nothing.
     Mode("general", "General (place, upgrade, wait)", GeneralThread, GeneralConfig,
