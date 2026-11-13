@@ -15,7 +15,8 @@ from PySide6.QtWidgets import (
 from ..capture import CaptureThread
 from ..control import input as inp
 from ..detector import DetectorThread
-from ..modes import BY_KEY, MODES, last_mode, save_mode
+from ..modes import BY_KEY, MODES, last_behavior, last_mode, save_behavior, save_mode
+from ..party import BEHAVIORS, PARTY, SOLO, with_party
 from ..stats import SessionStats
 from ..webhook import Notifier
 from ..vision.screens import SCREEN_LABELS
@@ -30,6 +31,7 @@ class _LogBridge(QObject):
 
 class MainPage(QWidget):
     mode_changed = Signal(str)
+    behavior_changed = Signal(str)
 
     def __init__(self, stats: SessionStats, capture: CaptureThread,
                  detector: DetectorThread, parent=None):
@@ -80,7 +82,8 @@ class MainPage(QWidget):
         # One controller per mode; only the selected one is ever started.
         self.macros = {}
         for mode in MODES:
-            thread = mode.thread_class(capture, detector, parent=self)
+            thread_class = with_party(mode.thread_class) if mode.supports_party else mode.thread_class
+            thread = thread_class(capture, detector, parent=self)
             thread.status.connect(self.action_value.setText)
             thread.log.connect(self.log_panel.log)
             thread.finished.connect(self._on_macro_finished)
@@ -94,7 +97,9 @@ class MainPage(QWidget):
             if hasattr(thread, "progress"):
                 thread.progress.connect(self._on_ic_progress)
             self.macros[mode.key] = thread
+        self.behavior = SOLO
         self._set_mode(last_mode())
+        self._set_behavior(last_behavior())
 
         # F1 = start, F3 = stop; checked even when Roblox is in front.
         self._keys_down: set[int] = set()
@@ -124,6 +129,19 @@ class MainPage(QWidget):
             lambda _: self._set_mode(self.mode_box.currentData()))
         mode_row.addWidget(self.mode_box, 1)
         box_layout.addLayout(mode_row)
+        role_row = QHBoxLayout()
+        role_row.addWidget(QLabel("Role", objectName="Muted"))
+        self.behavior_box = QComboBox()
+        for key, label in BEHAVIORS.items():
+            self.behavior_box.addItem(label, key)
+        self.behavior_box.setToolTip(
+            "Solo / Leader: MAACRO plays and also picks what's next (Play, Return to lobby, "
+            "Next Room…).\nParty Member: MAACRO only plays; the party leader picks portals and "
+            "what happens after each match. Stop the macro to switch.")
+        self.behavior_box.currentIndexChanged.connect(
+            lambda _: self._set_behavior(self.behavior_box.currentData()))
+        role_row.addWidget(self.behavior_box, 1)
+        box_layout.addLayout(role_row)
         status_row = QHBoxLayout()
         self.status_dot = QLabel("●")
         self.status_text = QLabel()
@@ -240,9 +258,40 @@ class MainPage(QWidget):
         """Switch mode (from the Modes page or the Mode box)."""
         self._set_mode(key)
 
+    def set_behavior(self, key: str) -> None:
+        """Switch Solo / Leader ↔ Party Member (Modes page or the Role box)."""
+        self._set_behavior(key)
+
+    def mode_label(self) -> str:
+        """e.g. "Summer Event" or "Infinity Castle (party member)"."""
+        label = BY_KEY[self.mode].label
+        return label + (" (party member)" if self.behavior == PARTY else "")
+
+    def _set_behavior(self, key: str) -> None:
+        if key not in BEHAVIORS:
+            return
+        if self.stats.running or any(t.isRunning() for t in self.macros.values()):
+            # Not while running: put the box back.
+            self.behavior_box.setCurrentIndex(self.behavior_box.findData(self.behavior))
+            return
+        changed = key != self.behavior
+        self.behavior = key
+        save_behavior(key)
+        for thread in self.macros.values():
+            if hasattr(thread, "set_behavior"):
+                thread.set_behavior(key)
+        index = self.behavior_box.findData(key)
+        if self.behavior_box.currentIndex() != index:
+            self.behavior_box.setCurrentIndex(index)
+        if changed:
+            self.log_panel.log(f"Role: {BEHAVIORS[key]}." + (
+                " MAACRO plays the matches; the party leader picks what's next."
+                if key == PARTY else ""))
+            self.behavior_changed.emit(key)
+
     def _post_run(self, record) -> None:
         # A moment later, so the win/loss is already in the totals.
-        mode = BY_KEY[self.mode].label
+        mode = self.mode_label()
         room = getattr(self.macro, "room", None) if self.mode == "infinity_castle" else None
         QTimer.singleShot(3000, lambda: self.notifier.run_ended(record, self.stats, mode, room))
 
@@ -256,7 +305,7 @@ class MainPage(QWidget):
             path = Path(tempfile.gettempdir()) / f"maacro_drop_{time.time_ns()}.jpg"
             if not image.save(str(path), "JPG", 90):
                 path = None
-        self.notifier.drop(name, rarity, path, BY_KEY[self.mode].label)
+        self.notifier.drop(name, rarity, path, self.mode_label())
 
     def _watch_for_alerts(self, message: str, level: str) -> None:
         if level == "Error" and ("check the game" in message or "Still stuck" in message):
@@ -277,6 +326,11 @@ class MainPage(QWidget):
             self.mode_box.setCurrentIndex(index)
         self.ic_box.setVisible(key == "infinity_castle")
         self.log_panel.log(f"Mode: {BY_KEY[key].label}.")
+        if hasattr(self, "behavior_box"):
+            supported = BY_KEY[key].supports_party
+            self.behavior_box.setEnabled(supported and not self.stats.running)
+            if not supported and self.behavior == PARTY:
+                self._set_behavior(SOLO)
         self.mode_changed.emit(key)
 
     def _on_ic_progress(self, info: dict) -> None:
@@ -291,8 +345,11 @@ class MainPage(QWidget):
         if self.stats.running or any(t.isRunning() for t in self.macros.values()):
             return
         self.macro.settings = BY_KEY[self.mode].config_class.load()
+        if hasattr(self.macro, "set_behavior"):
+            self.macro.set_behavior(self.behavior)
         self.stats.start()
         self.mode_box.setEnabled(False)
+        self.behavior_box.setEnabled(False)
         self.macro.start()
         # Bring Roblox to the front right away (not only on the first click).
         hwnd = self.capture.hwnd if hasattr(self, "capture") else None
@@ -309,11 +366,13 @@ class MainPage(QWidget):
         self.stats.stop()
         inp.release_all()
         self.mode_box.setEnabled(True)
+        self.behavior_box.setEnabled(BY_KEY[self.mode].supports_party)
         self.log_panel.log("Macro stopped.")
 
     def _on_macro_finished(self) -> None:
         self.action_value.setText("—")
         self.mode_box.setEnabled(not self.stats.running)
+        self.behavior_box.setEnabled(not self.stats.running and BY_KEY[self.mode].supports_party)
         if self.stats.running:      # loop ended by itself (F3 sets running off first)
             # Restart it, unless it keeps dying (then something needs fixing).
             now = time.monotonic()

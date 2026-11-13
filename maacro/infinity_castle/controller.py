@@ -40,6 +40,8 @@ ROOM_OVER_GRACE = 20    # s after a room ends with no loading/vote start: button
 class InfinityCastleThread(MacroThread):
     ALLOW_LOBBY_PLAY = False        # never queue from the lobby
     ALLOW_RETURN_TO_LOBBY = False   # never leave the castle
+    # Its own party-level decision (Party Member mode leaves it to the leader).
+    PROGRESSION_ACTIONS = ("_continue",)
     progress = Signal(dict)     # {"room", "cleared", "retries", "note"} for the UI
 
     def __init__(self, capture, detector, settings: InfinityConfig | None = None, parent=None):
@@ -215,7 +217,7 @@ class InfinityCastleThread(MacroThread):
         # screen is up with none of its buttons read (it still shows the wave,
         # so it reads as the match). Press the usual Next Room / Retry spot.
         if det is not None and self._room_over_at is not None                 and time.monotonic() - self._room_over_at > ROOM_OVER_GRACE:
-            if self._continue_tries < CONTINUE_TRIES:
+            if self._continue_tries < CONTINUE_TRIES and not getattr(self, "party_member", False):
                 self.log.emit("The room is over but its buttons can't be read — "
                               "pressing where Next Room / Retry usually is.", "Warn")
                 self._continue_tries = CONTINUE_TRIES

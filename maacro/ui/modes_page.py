@@ -1,10 +1,12 @@
-"""The Modes page: pick which game mode MAACRO plays. Same choice as the
-Mode box on the Main page (they stay in sync)."""
+"""The Modes page: pick which game mode MAACRO plays, and its role (Solo /
+Leader or Party Member). Same choices as the Mode and Role boxes on the Main
+page (they stay in sync)."""
 from __future__ import annotations
 
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from ..modes import MODES
+from ..party import BEHAVIORS
 
 DESCRIPTIONS = {
     "summer": ("Start it in the lobby. Each run: Play → walk to the ring → Find Match → "
@@ -14,6 +16,16 @@ DESCRIPTIONS = {
                         "units on the circled path) and upgrade → Next → Next Room, or Retry "
                         "after a defeat → again, forever. Never goes back to the lobby; no "
                         "matchmaking, captcha or cards."),
+}
+
+ROLE_DESCRIPTIONS = {
+    "solo": ("MAACRO does everything: plays the match and decides what's next (Play, walking "
+             "to the ring, Find Match, Return to lobby, Next Room / Retry)."),
+    "party": ("You're in someone else's party. The leader moves around the lobby, picks the "
+              "portal and presses Return to lobby / Retry / Next Room. MAACRO waits for each "
+              "match to load, then plays it: votes Yes, places and upgrades units, picks "
+              "Summer cards, closes popups, presses Next on its own results and Reconnect if "
+              "disconnected. It never clicks the leader's choices."),
 }
 
 
@@ -47,10 +59,37 @@ class ModesPage(QWidget):
             box.addWidget(text)
             layout.addWidget(card)
             self.cards[mode.key] = (card, button, badge)
+        layout.addSpacing(8)
+        layout.addWidget(QLabel("Role", objectName="PageTitle"))
+        layout.addWidget(QLabel("Works with every mode above.", objectName="Muted"))
+        self.role_cards: dict[str, tuple[QFrame, QPushButton, QLabel]] = {}
+        row = QHBoxLayout()
+        for key, label in BEHAVIORS.items():
+            card = QFrame(objectName="Card")
+            box = QVBoxLayout(card)
+            box.setContentsMargins(16, 12, 16, 14)
+            box.setSpacing(6)
+            top = QHBoxLayout()
+            top.addWidget(QLabel(label, objectName="PanelTitle"))
+            badge = QLabel("", objectName="Muted")
+            top.addWidget(badge)
+            top.addStretch()
+            button = QPushButton("Use this role", objectName="StartButton")
+            button.clicked.connect(lambda _=False, k=key: self.main_page.set_behavior(k))
+            top.addWidget(button)
+            box.addLayout(top)
+            text = QLabel(ROLE_DESCRIPTIONS.get(key, ""), objectName="Muted")
+            text.setWordWrap(True)
+            box.addWidget(text)
+            box.addStretch()
+            row.addWidget(card, 1)
+            self.role_cards[key] = (card, button, badge)
+        layout.addLayout(row)
         self.note = QLabel("", objectName="Muted")
         layout.addWidget(self.note)
         layout.addStretch()
         main_page.mode_changed.connect(self.refresh)
+        main_page.behavior_changed.connect(self.refresh)
         main_page.stats.changed.connect(self.refresh)
         self.refresh()
 
@@ -65,4 +104,10 @@ class ModesPage(QWidget):
             card.setStyleSheet("#Card { border-color: #8b5cf6; }" if selected else "")
             button.setVisible(not selected)
             button.setEnabled(not running)
-        self.note.setText("Stop the macro (F3) to switch modes." if running else "")
+        for key, (card, button, badge) in self.role_cards.items():
+            selected = key == self.main_page.behavior
+            badge.setText("● selected" if selected else "")
+            card.setStyleSheet("#Card { border-color: #8b5cf6; }" if selected else "")
+            button.setVisible(not selected)
+            button.setEnabled(not running)
+        self.note.setText("Stop the macro (F3) to switch modes or roles." if running else "")
