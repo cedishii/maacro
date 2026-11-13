@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import (
     QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QSplitter,
@@ -15,12 +15,20 @@ from ..control import input as inp
 from ..detector import DetectorThread
 from ..modes import BY_KEY, MODES, last_mode, save_mode
 from ..stats import SessionStats
+from ..webhook import Notifier
 from ..vision.screens import SCREEN_LABELS
 from . import theme
 from .widgets import LiveView, LogPanel, key_value_row, panel
 
 
+class _LogBridge(QObject):
+    """Lets background threads (Discord sends) write to the log safely."""
+    line = Signal(str, str)
+
+
 class MainPage(QWidget):
+    mode_changed = Signal(str)
+
     def __init__(self, stats: SessionStats, capture: CaptureThread,
                  detector: DetectorThread, parent=None):
         super().__init__(parent)
@@ -55,6 +63,11 @@ class MainPage(QWidget):
         detector.event.connect(self._on_game_event)
         detector.failed.connect(lambda msg: self.log_panel.log(msg, "Error"))
 
+        # Discord updates (Settings page).
+        self._log_bridge = _LogBridge(self)
+        self._log_bridge.line.connect(self.log_panel.log)
+        self.notifier = Notifier(log=lambda msg, level="Info": self._log_bridge.line.emit(msg, level))
+
         # One controller per mode; only the selected one is ever started.
         self.macros = {}
         for mode in MODES:
@@ -63,8 +76,11 @@ class MainPage(QWidget):
             thread.log.connect(self.log_panel.log)
             thread.finished.connect(self._on_macro_finished)
             thread.drop_found.connect(self.stats.add_drop)
+            thread.drop_found.connect(self.notifier.note_drop)
             thread.run_recorded.connect(
                 lambda record: self.stats.add_pearls(record.pearls) if record.pearls else None)
+            thread.run_recorded.connect(self._post_run)
+            thread.log.connect(self._watch_for_alerts)
             if hasattr(thread, "progress"):
                 thread.progress.connect(self._on_ic_progress)
             self.macros[mode.key] = thread
@@ -208,6 +224,20 @@ class MainPage(QWidget):
         """The selected mode's controller."""
         return self.macros[self.mode]
 
+    def set_mode(self, key: str) -> None:
+        """Switch mode (from the Modes page or the Mode box)."""
+        self._set_mode(key)
+
+    def _post_run(self, record) -> None:
+        # A moment later, so the win/loss is already in the totals.
+        mode = BY_KEY[self.mode].label
+        room = getattr(self.macro, "room", None) if self.mode == "infinity_castle" else None
+        QTimer.singleShot(3000, lambda: self.notifier.run_ended(record, self.stats, mode, room))
+
+    def _watch_for_alerts(self, message: str, level: str) -> None:
+        if level == "Error" and ("check the game" in message or "Still stuck" in message):
+            self.notifier.stuck(message)
+
     def _set_mode(self, key: str) -> None:
         if key not in BY_KEY:
             return
@@ -223,6 +253,7 @@ class MainPage(QWidget):
             self.mode_box.setCurrentIndex(index)
         self.ic_box.setVisible(key == "infinity_castle")
         self.log_panel.log(f"Mode: {BY_KEY[key].label}.")
+        self.mode_changed.emit(key)
 
     def _on_ic_progress(self, info: dict) -> None:
         self.ic_room_value.setText("—" if info.get("room") is None else str(info["room"]))
@@ -348,6 +379,7 @@ class MainPage(QWidget):
         elif kind == "map":
             self.map_value.setText(str(value))
         elif kind == "result":
+            self.notifier.note_result(value)
             if value == "win":
                 self.stats.add_win()
                 self.log_panel.log(f"VICTORY detected — win counted (run {self.stats.runs}).")

@@ -14,16 +14,18 @@ from ..stats import SessionStats
 from .configs_page import ConfigsPage
 from .detection_page import DetectionPage
 from .main_page import MainPage
+from .modes_page import ModesPage
+from .settings_page import SettingsPage
 
 # (icon, label, when it gets built)
 PAGES = [
     ("▦", "Main", None),
-    ("◈", "Modes", "Step 3: pick the gamemode and map."),
+    ("◈", "Modes", None),
     ("☰", "Actions", "Step 4: what to click and when."),
     ("◉", "Recorder", "Step 4: record unit placement."),
     ("⚙", "Configs", None),
     ("⌕", "Detection", None),
-    ("✦", "Settings", "Step 5: hotkeys, Discord updates and more."),
+    ("✦", "Settings", None),
 ]
 
 
@@ -73,6 +75,8 @@ class MainWindow(QMainWindow):
             "Main": self.main_page,
             "Detection": DetectionPage(self.capture, self.detector),
             "Configs": ConfigsPage(),
+            "Modes": ModesPage(self.main_page),
+            "Settings": SettingsPage(self.main_page.notifier),
         }
 
         group = QButtonGroup(self)

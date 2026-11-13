@@ -16,3 +16,4 @@ maps/*_source.png
 # Per-mode settings (local)
 ic_config.json
 mode.json
+webhook.json
