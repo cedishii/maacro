@@ -16,6 +16,10 @@ DESCRIPTIONS = {
                         "units on the circled path) and upgrade → Next → Next Room, or Retry "
                         "after a defeat → again, forever. Never goes back to the lobby; no "
                         "matchmaking, captcha or cards."),
+    "general": ("For anything else (story, raids, portals…). Start the match yourself; MAACRO "
+                "zooms out, places your units, upgrades them to Max and waits. It never clicks "
+                "Play, Next, Replay or Return to lobby — you do. Voting Yes and picking cards "
+                "are off unless you switch them on in its Configs tab."),
 }
 
 ROLE_DESCRIPTIONS = {

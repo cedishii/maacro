@@ -264,8 +264,8 @@ class MainPage(QWidget):
 
     def mode_label(self) -> str:
         """e.g. "Summer Event" or "Infinity Castle (party member)"."""
-        label = BY_KEY[self.mode].label
-        return label + (" (party member)" if self.behavior == PARTY else "")
+        mode = BY_KEY[self.mode]
+        return mode.label + (" (party member)" if self.behavior == PARTY and mode.supports_party else "")
 
     def _set_behavior(self, key: str) -> None:
         if key not in BEHAVIORS:
@@ -327,10 +327,8 @@ class MainPage(QWidget):
         self.ic_box.setVisible(key == "infinity_castle")
         self.log_panel.log(f"Mode: {BY_KEY[key].label}.")
         if hasattr(self, "behavior_box"):
-            supported = BY_KEY[key].supports_party
-            self.behavior_box.setEnabled(supported and not self.stats.running)
-            if not supported and self.behavior == PARTY:
-                self._set_behavior(SOLO)
+            # A mode without party support just ignores the role (kept for the others).
+            self.behavior_box.setEnabled(BY_KEY[key].supports_party and not self.stats.running)
         self.mode_changed.emit(key)
 
     def _on_ic_progress(self, info: dict) -> None:

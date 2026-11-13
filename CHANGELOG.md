@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+**New**
+- **General mode:** places units, upgrades them and waits — for any match (story, raids,
+  portals…). You start the match and handle everything after it; voting Yes and picking
+  cards are optional switches.
+- **Role: Party Member** (Summer Event and Infinity Castle): MAACRO plays the matches, the
+  party leader picks portals and Return to lobby / Retry / Next Room.
+
+**Fixed**
+- Infinity Castle: each room's map is recognised again (it kept Snowy Town's zones and
+  walk for every later room). Snowy Town walks right like Summer's and zooms out again.
+
 ## v0.2.0 — 2026-11-13
 
 **New**

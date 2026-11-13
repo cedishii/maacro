@@ -1,0 +1,105 @@
+"""The General controller: place units, upgrade them, wait. Nothing else.
+
+For anything that isn't Summer Event or Infinity Castle (story, raids,
+portals, someone else's lobby…). The player picks the stage and handles
+everything before and after the match; MAACRO only plays the match:
+
+    match starts → zoom out → (walk, if the map's zones need it) → place
+    → upgrade to Max → wait → … → match over → wait for the next match.
+
+It's a subclass of Summer's MacroThread, so placing, upgrading, closing
+popups and drops are the same tested code; macro.py isn't changed. Lobby,
+Play, matchmaking, captcha, Next, Return to lobby and Replay are never
+touched. Voting Yes and picking cards are off unless switched on.
+"""
+from __future__ import annotations
+
+from ..macro import MacroThread
+from ..vision.screens import Detection
+from .config import GeneralConfig
+
+# Screens that are the player's to handle (no recovery clicks on them).
+PLAYER_SCREENS = ("lobby", "join_matchmaking", "captcha", "match_found", "loading",
+                  "end", "after_end")
+GAME_SCREENS = ("vote_start", "in_match", "unit_manager", "card_pick")
+
+
+class GeneralThread(MacroThread):
+    ALLOW_LOBBY_PLAY = False
+    ALLOW_RETURN_TO_LOBBY = False
+
+    def __init__(self, capture, detector, settings: GeneralConfig | None = None, parent=None):
+        super().__init__(capture, detector, settings or GeneralConfig(), parent)
+        self._in_game = False
+
+    def run(self) -> None:
+        self._in_game = False
+        self.log.emit("General mode — places units, upgrades them and waits. Start a match "
+                      "yourself; MAACRO never clicks Play, Next, Replay or Return to lobby.", "Info")
+        super().run()
+
+    def _watch_map(self, det: Detection | None) -> None:
+        if not getattr(self.settings, "use_map_zones", True):
+            self._maps = []         # automatic spots, no walking
+        super()._watch_map(det)
+
+    # --- the player's screens: just wait ---------------------------------
+    def _wait(self, text: str) -> None:
+        self._say(f"Waiting — {text}", log=False)
+
+    def _on_lobby(self, hwnd: int) -> None:
+        self._wait("in the lobby (start a match and MAACRO plays it)")
+
+    def _on_join_matchmaking(self, hwnd: int) -> None:
+        self._wait("matchmaking is up to you")
+
+    def _on_captcha(self, hwnd: int) -> None:
+        self._wait("verification is up to you")
+
+    def _on_vote_start(self, hwnd: int) -> None:
+        if self.settings.auto_vote_start:
+            super()._on_vote_start(hwnd)
+        else:
+            self._wait("vote start (voting is off in General's settings)")
+
+    def _on_card_pick(self, hwnd: int) -> None:
+        if self.settings.auto_card_pick:
+            super()._on_card_pick(hwnd)
+        else:
+            self._wait("card vote (picking is off in General's settings)")
+
+    def _on_end(self, hwnd: int) -> None:
+        """Count the win/loss (for the totals and Discord), but leave Next to you."""
+        det = self._fresh("end")
+        if det is None or self._close_covering_manager(hwnd, det):
+            return
+        if not self.match.recorded and det.result:
+            self._record_run(det)
+        self._wait("match over")
+
+    def _on_after_end(self, hwnd: int) -> None:
+        det = self.detector.latest
+        if det is not None and det.screen == "after_end" and self._close_covering_manager(hwnd, det):
+            return
+        self._wait("match over (Return to lobby / Replay is up to you)")
+
+    # --- watchdog: only unstick things inside a match ----------------------
+    def _watchdog(self, hwnd: int, screen: str) -> None:
+        if screen in GAME_SCREENS:
+            self._in_game = True
+        elif screen in PLAYER_SCREENS:
+            self._in_game = False
+        if screen in PLAYER_SCREENS or (screen == "unknown" and not self._in_game):
+            return
+        if screen == "vote_start" and not self.settings.auto_vote_start:
+            return
+        if screen == "card_pick" and not self.settings.auto_card_pick:
+            return
+        super()._watchdog(hwnd, screen)
+
+    def _try_buttons(self, hwnd: int, det: Detection) -> str:
+        line = self._line(det, "reconnect", exact=True)
+        if line is not None:
+            self._click_line(hwnd, line, line.text)
+            return f"pressed '{line.text}'"
+        return ""

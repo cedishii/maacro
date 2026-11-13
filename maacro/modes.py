@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import MacroConfig
+from .general.config import GeneralConfig
+from .general.controller import GeneralThread
 from .infinity_castle.config import InfinityConfig
 from .infinity_castle.controller import InfinityCastleThread
 from .macro import MacroThread
@@ -30,6 +32,9 @@ class Mode:
 MODES = (
     Mode("summer", "Summer Event", MacroThread, MacroConfig),
     Mode("infinity_castle", "Infinity Castle", InfinityCastleThread, InfinityConfig),
+    # Already leaves every choice to the player, so the Party Member role adds nothing.
+    Mode("general", "General (place, upgrade, wait)", GeneralThread, GeneralConfig,
+         supports_party=False),
 )
 BY_KEY = {mode.key: mode for mode in MODES}
 
