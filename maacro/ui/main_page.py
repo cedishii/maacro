@@ -35,6 +35,7 @@ class MainPage(QWidget):
                  detector: DetectorThread, parent=None):
         super().__init__(parent)
         self.stats = stats
+        self.capture = capture
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -285,6 +286,13 @@ class MainPage(QWidget):
         self.stats.start()
         self.mode_box.setEnabled(False)
         self.macro.start()
+        # Bring Roblox to the front right away (not only on the first click).
+        hwnd = self.capture.hwnd if hasattr(self, "capture") else None
+        if hwnd:
+            try:
+                inp.focus(hwnd)
+            except Exception:
+                pass
 
     def stop_macro(self) -> None:
         if not self.stats.running and not self.macro.isRunning():

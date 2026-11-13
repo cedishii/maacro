@@ -92,6 +92,19 @@ def _any(lines: list[OcrLine], *keywords: str, threshold: float = 0.8) -> bool:
     return any(_find(lines, k, threshold) for k in keywords)
 
 
+def _lobby_menu(lines: list[OcrLine]) -> bool:
+    """The lobby's menu buttons (Units, Items, Play, Store…): 3 or more."""
+    return sum(any(_norm(l.text) == w for l in lines) for w in LOBBY_WORDS) >= 3
+
+
+def _travelling(lines: list[OcrLine]) -> bool:
+    """The loading screen's "Travelling to…". Not the lobby's "TRAVELLING
+    MERCHANT" sign (update 21), which reads almost the same."""
+    if any("merch" in l.text.lower() for l in lines):
+        return False
+    return any(fuzzy_in("travelling to", l.text) or fuzzy_in("traveling to", l.text) for l in lines)
+
+
 # --- details ---------------------------------------------------------------
 def _wave(lines: list[OcrLine]) -> int | None:
     for line in lines:
@@ -175,7 +188,7 @@ def detect_screen(frame: np.ndarray, lines: list[OcrLine]) -> Detection:
                 det.result = "loss"
     elif _any(lines, "return to lobby", "waiting for players"):
         det.screen = "after_end"
-    elif _any(lines, "travelling to", "traveling to"):
+    elif _travelling(lines) and not _lobby_menu(lines):
         det.screen = "loading"
     elif _any(lines, "enter this text"):
         det.screen = "captcha"
@@ -192,7 +205,7 @@ def detect_screen(frame: np.ndarray, lines: list[OcrLine]) -> Detection:
     elif det.wave is not None or det.placing or det.no_money \
             or _any(lines, "enemies remaining", "level info"):
         det.screen = "in_match"
-    elif sum(any(_norm(l.text) == w for l in lines) for w in LOBBY_WORDS) >= 3:
+    elif _lobby_menu(lines):
         det.screen = "lobby"
 
     if det.screen in ("in_match", "card_pick", "unit_manager", "end", "after_end"):
