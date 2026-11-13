@@ -116,12 +116,27 @@ def read_run(frame: np.ndarray, lines: list[OcrLine], ocr: OcrReader, result: st
     return record
 
 
+KEEP_RUN_SHOTS = 100     # end-screen pictures kept (the CSV keeps every run)
+
+
+def prune_files(folder: Path, pattern: str, keep: int) -> None:
+    """Delete all but the newest `keep` files matching `pattern`, so long
+    grinds don't slowly fill the disk with screenshots."""
+    try:
+        files = sorted(folder.glob(pattern), key=lambda p: p.stat().st_mtime)
+        for old in files[:-keep] if keep else files:
+            old.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def save_run(record: RunRecord, frame: np.ndarray) -> Path:
     """Add the run to runs/runs.csv and save the end screen. Returns the CSV path."""
     RUNS_DIR.mkdir(exist_ok=True)
     now = datetime.now()
     shot = RUNS_DIR / f"{now:%Y%m%d_%H%M%S}_{record.result}.png"
     cv2.imwrite(str(shot), np.ascontiguousarray(frame[..., :3]))
+    prune_files(RUNS_DIR, "*_*.png", KEEP_RUN_SHOTS)
     record.screenshot = shot.name
     path = RUNS_DIR / "runs.csv"
     new = not path.exists()

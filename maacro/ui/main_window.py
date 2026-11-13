@@ -1,7 +1,7 @@
 """The MAACRO window: sidebar on the left, pages on the right."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QButtonGroup, QHBoxLayout, QLabel, QMainWindow, QStackedWidget,
     QToolButton, QVBoxLayout, QWidget,
@@ -66,7 +66,7 @@ class MainWindow(QMainWindow):
         self.pages = QStackedWidget()
         root.addWidget(self.pages, 1)
 
-        self.capture = CaptureThread(fps=10, parent=self)
+        self.capture = CaptureThread(fps=8, parent=self)
         self.detector = DetectorThread(self.capture, parent=self)
         self.main_page = MainPage(self.stats, self.capture, self.detector)
         built = {
@@ -95,8 +95,22 @@ class MainWindow(QMainWindow):
         # Pages are connected; start watching the game.
         self.capture.start()
         self.detector.start()
+        # Watchdog: if the capture or screen-reading thread ever ends by
+        # itself, start it again (they're meant to run until MAACRO closes).
+        self._closing = False
+        self._thread_watch = QTimer(self, interval=5000, timeout=self._restart_dead_threads)
+        self._thread_watch.start()
+
+    def _restart_dead_threads(self) -> None:
+        if self._closing:
+            return
+        for name, thread in (("Window capture", self.capture), ("Screen reading", self.detector)):
+            if not thread.isRunning():
+                self.main_page.log_panel.log(f"{name} stopped unexpectedly — restarting it.", "Warn")
+                thread.start()
 
     def closeEvent(self, event) -> None:
+        self._closing = True
         self.main_page.shutdown()
         for thread in (self.detector, self.capture):
             thread.requestInterruption()

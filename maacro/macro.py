@@ -23,7 +23,7 @@ from .config import MacroConfig
 from .control import input as inp
 from .detector import DetectorThread
 from .maps import MapZones, find_map, load_maps, spread
-from .runs import read_run, save_run
+from .runs import prune_files, read_run, save_run
 from screen_numbers import read_number, type_text
 from .placement import drop_red_spots, find_green_buttons, placeable_spots, spots_to_try, upgrade_order
 
@@ -66,6 +66,17 @@ PLACE_RETRY_PAUSE = 20   # seconds of upgrading before trying stuck units again
 MISSES_BEFORE_NEXT = 4   # placing passes without luck before trying the next unit
 WALK_WAIT = 90           # most seconds to wait for "Wave" to show before walking anyway
 WALK_MAX_WAVE = 3        # later than this, the match is under way: don't walk
+
+# Watchdog: seconds a screen can stay up before it counts as stuck and a
+# recovery step is tried (then another every RECOVER_EVERY s, escalating).
+# Not here: in_match (matches are long) and captcha (it has its own catcher).
+STUCK_LIMITS = {
+    "after_end": 25, "end": 30, "card_pick": 40, "vote_start": 90,
+    "unit_manager": 240, "join_matchmaking": 60, "lobby": 120,
+    "match_found": 120, "loading": 180, "disconnected": 60, "unknown": 60,
+}
+RECOVER_EVERY = 10
+ALERT_AFTER = 600        # stuck this long → beep and ask the player for help
 
 
 @dataclass
@@ -129,6 +140,10 @@ class MacroThread(QThread):
         self._last_error_at = 0.0
         self._error_repeats = 0
         self._matchmaking_started_at = None     # Find Match click, for the stuck-captcha catcher
+        self._screen_since = time.monotonic()   # when the current screen came up (watchdog)
+        self._recover_step = 0
+        self._recover_at = 0.0
+        self._alerted = False
 
     # --- helpers -------------------------------------------------------
     def _say(self, status: str, log: bool = True, level: str = "Info") -> None:
@@ -238,6 +253,7 @@ class MacroThread(QThread):
         self._map = None
         self._map_walked = False    # the thread is reused on every F1: start fresh
         self._matchmaking_started_at = None
+        self._screen_since, self._recover_step, self._alerted = time.monotonic(), 0, False
         if self._maps:
             self.log.emit(f"Placement zones saved for: {', '.join(m.name for m in self._maps)}.", "Info")
         wave = self.detector.tracker.wave
@@ -250,6 +266,8 @@ class MacroThread(QThread):
             while not self.isInterruptionRequested():
                 try:
                     latest = self.detector.latest
+                    if latest is not None and latest.screen == self.detector.tracker.screen:
+                        self._last_good = latest     # for the watchdog: a clean read of this screen
                     if latest is not None and latest.screen == "unit_manager":
                         self._manager_seen_at = time.monotonic()
                     if self.detector.tracker.screen in ("captcha", "match_found"):
@@ -290,9 +308,12 @@ class MacroThread(QThread):
                         if screen == "card_pick":
                             self.match.card_seen_at = time.monotonic()
                         self._screen = screen
+                        self._screen_since = time.monotonic()
+                        self._recover_step, self._alerted = 0, False
                     handler = getattr(self, f"_on_{screen}", None)
                     if handler:
                         handler(hwnd)
+                    self._watchdog(hwnd, screen)
                 except Exception as exc:
                     # Keep the macro running: log the error and try again next loop.
                     inp.release_all()
@@ -390,6 +411,123 @@ class MacroThread(QThread):
             self._map_warned = True
             self.log.emit(f"Map '{det.map_name}': no placement zones saved yet "
                           "(using automatic spots).", "Info")
+
+    # --- watchdog: getting unstuck ---------------------------------------
+    @staticmethod
+    def _manager_open(det: Detection | None) -> bool:
+        """The unit manager's panel is on screen (it can sit over other screens)."""
+        return det is not None and sum(fuzzy_in("first", l.text) for l in det.lines) >= 2
+
+    def _watchdog(self, hwnd: int, screen: str) -> None:
+        """If the same screen has been up for too long, the normal step isn't
+        working: try a recovery step, a different one each time. After
+        ALERT_AFTER seconds, also beep so the player can have a look."""
+        limit = STUCK_LIMITS.get(screen)
+        now = time.monotonic()
+        stuck = now - self._screen_since
+        if limit is None or stuck < limit or now - self._recover_at < RECOVER_EVERY:
+            return
+        self._recover_at = now
+        step = self._recover_step
+        self._recover_step += 1
+        action = self._recover(hwnd, screen, step)
+        from .vision.screens import SCREEN_LABELS
+        self.log.emit(f"Stuck on '{SCREEN_LABELS.get(screen, screen)}' for {int(stuck)} s — "
+                      f"{action}.", "Warn")
+        if stuck >= ALERT_AFTER and not self._alerted:
+            self._alerted = True
+            self.log.emit(f"Still stuck after {int(stuck // 60)} min — please check the game.", "Error")
+            try:
+                winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+            except Exception:
+                pass
+
+    def _recover(self, hwnd: int, screen: str, step: int) -> str:
+        """One recovery step for `screen`. Returns what it did (for the log)."""
+        det = getattr(self, "_last_good", None)
+        if det is None or det.screen != screen:
+            det = self.detector.latest
+        m = self.match
+        # Anything the unit manager covers: close it first.
+        if screen in ("after_end", "end", "unknown", "vote_start") and self._manager_open(det):
+            inp.press(hwnd, "f")
+            return "closing the unit manager that's covering it"
+        if screen == "after_end":
+            self._last_done.pop("return", None)
+            spot = self._return_spot(det) if det is not None else None
+            if step % 2 == 1 and spot is not None:
+                inp.click(hwnd, *spot)
+                return "clicking where Return to lobby usually is"
+            button = self._line(det, "return to lobby", threshold=0.6) if det is not None else None
+            if button is not None:
+                inp.focus(hwnd)
+                self._click_line(hwnd, button, "Return to lobby")
+                return "clicking Return to lobby again"
+            if spot is not None:
+                inp.click(hwnd, *spot)
+                return "clicking where Return to lobby usually is"
+            return "Return to lobby not found — waiting"
+        if screen == "end":
+            self._last_done.pop("next", None)
+            button = self._line(det, "next", threshold=0.6) if det is not None else None
+            if button is not None:
+                inp.focus(hwnd)
+                self._click_line(hwnd, button, "Next")
+                return "clicking Next again"
+            return "Next not found — waiting"
+        if screen == "card_pick":
+            if step == 0 and m.card_clicked:
+                m.card_voted = False
+                return "pressing Vote again"
+            m.card_clicked = m.card_voted = False
+            return "picking a card again"
+        if screen == "vote_start":
+            m.voted_start = False
+            self._last_done.pop("vote_yes", None)
+            return "voting Yes again"
+        if screen == "unit_manager":
+            m.upgrades_done = False
+            inp.press(hwnd, "f")
+            return "closing the unit manager"
+        if screen == "lobby":
+            self._matchmaking_at = -1e9
+            self._last_done.pop("play", None)
+            return "trying Play again"
+        if screen == "join_matchmaking":
+            self._last_done.pop("find_match", None)
+            return "trying Find Match again"
+        if screen == "disconnected":
+            self._last_done.pop("reconnect", None)
+            return "trying Reconnect again"
+        if screen in ("match_found", "loading"):
+            return "nothing to click, still waiting"
+        # Unknown screen: a popup, a panel, or placement mode left open.
+        width, height = self._frame_size()
+        if step % 2 == 0:
+            inp.click(hwnd, width * 0.5, height * 0.12)
+            self._park_mouse(hwnd)
+            return "clicking the top of the screen to close any popup"
+        inp.press(hwnd, "q")
+        return "pressing Q to leave placement mode"
+
+    def _return_spot(self, det: Detection) -> tuple[float, float] | None:
+        """Where Return to lobby usually is: above "Waiting for Players", left
+        of its centre (Replay is to the right)."""
+        waiting = self._line(det, "waiting for players")
+        if waiting is None:
+            return None
+        return waiting.center_x - 0.29 * waiting.w, waiting.y - 0.125 * waiting.w
+
+    def _on_disconnected(self, hwnd: int) -> None:
+        """Roblox's "Disconnected … Reconnect" box: press Reconnect."""
+        det = self._fresh("disconnected")
+        if det is None or not self._cooldown("reconnect", 15):
+            return
+        button = self._line(det, "reconnect", exact=True) or self._line(det, "reconnect")
+        if button is None:
+            return
+        self._say("Disconnected from Roblox → clicking Reconnect", level="Warn")
+        self._click_line(hwnd, button, "Reconnect")
 
     # --- one handler per screen ----------------------------------------
     def _on_lobby(self, hwnd: int) -> None:
@@ -1025,13 +1163,15 @@ class MacroThread(QThread):
         # second time could un-select it, so it's never clicked again.
         if not m.card_clicked:
             cards = find_cards(frame, det.lines)
-            title_read = any(fuzzy_in("choose a card", l.text) for l in det.lines)
+            title_read = any(fuzzy_in("choose a card", l.text) or fuzzy_in("weather shifts", l.text)
+                             for l in det.lines)
             if not title_read and self._cooldown("card_layout_log", 30):
                 # Keep a picture: the title being unreadable is what used to
                 # stop card picks, and the cause isn't known yet.
                 shot = Path(__file__).resolve().parents[1] / "logs" / f"card_pick_{time.strftime('%Y%m%d_%H%M%S')}.png"
                 shot.parent.mkdir(exist_ok=True)
                 cv2.imwrite(str(shot), frame)
+                prune_files(shot.parent, "card_pick_*.png", 30)
                 self.log.emit(f"Card pick: title not read — using the usual card spots "
                               f"(screenshot: {shot}).", "Warn")
             read_card_texts(cards, det.lines)      # uses text already read: no extra time
@@ -1058,9 +1198,20 @@ class MacroThread(QThread):
         m.card_voted = True
         self.log.emit("Card pick: voted.", "Info")
 
+    def _close_covering_manager(self, hwnd: int, det: Detection) -> bool:
+        """The unit manager left open over the end screens: close it first
+        (it hid the Return to lobby button once). True if F was pressed."""
+        if self._manager_open(det) and self._cooldown("close_covering_manager", 3):
+            self.log.emit("Closing the unit manager over the end screen.", "Info")
+            inp.press(hwnd, "f")
+            return True
+        return False
+
     def _on_end(self, hwnd: int) -> None:
         det = self._fresh("end")
         if det is None:
+            return
+        if self._close_covering_manager(hwnd, det):
             return
         if not self.match.recorded and det.result:
             self._record_run(det)
@@ -1093,21 +1244,21 @@ class MacroThread(QThread):
 
     def _on_after_end(self, hwnd: int) -> None:
         det = self._fresh("after_end")
-        if det is None or not self._cooldown("return", 5):
+        if det is None or self._close_covering_manager(hwnd, det):
+            return
+        if not self._cooldown("return", 5):
             return
         button = self._line(det, "return to lobby")
         if button is None:
             # The button's text isn't always read (it once stayed unread for
             # hours with the unit manager open). It sits above "Waiting for
             # Players", left of its centre (Replay is to the right).
-            waiting = self._line(det, "waiting for players")
-            if waiting is None:
+            spot = self._return_spot(det)
+            if spot is None:
                 return
-            x = waiting.center_x - 0.29 * waiting.w
-            y = waiting.y - 0.125 * waiting.w
             self._say("Returning to lobby (button text not read — using its usual spot)")
             self.log.emit("Clicking Return to lobby", "Info")
-            inp.click(hwnd, x, y)
+            inp.click(hwnd, *spot)
             return
         self._say("Returning to lobby")
         self._click_line(hwnd, button, "Return to lobby")

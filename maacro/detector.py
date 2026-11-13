@@ -33,20 +33,31 @@ class DetectorThread(QThread):
             return
         last_id = -1
         while not self.isInterruptionRequested():
-            frame_id, frame, frame_time = self.capture.latest_frame_info()
-            if frame is not None and frame_id != last_id:
-                last_id = frame_id
-                started = time.perf_counter()
-                try:
-                    det = detect_screen(frame, reader.read(frame))
-                except Exception as exc:
-                    self.failed.emit(f"Screen reading error: {exc}")
-                    self.msleep(1000)
-                    continue
-                self.latest = det
-                self.latest_time = frame_time
-                self.latest_count += 1
-                self.detection.emit(det, (time.perf_counter() - started) * 1000)
-                for kind, value in self.tracker.feed(det):
-                    self.event.emit(kind, value)
-            self.msleep(self.interval_ms)
+            started = time.perf_counter()
+            try:
+                last_id = self._step(reader, last_id)
+            except Exception as exc:
+                # Never let one bad frame end the thread: report and carry on.
+                self.failed.emit(f"Screen reading error: {exc}")
+                self.msleep(1000)
+                continue
+            # On a slow PC a read can take most of a second: rest at least half
+            # as long as it took, so screen reading never hogs a whole CPU core
+            # (the game needs it more). Fast PCs keep the usual pace.
+            took_ms = (time.perf_counter() - started) * 1000
+            self.msleep(int(max(self.interval_ms, 0.5 * took_ms)))
+
+    def _step(self, reader: OcrReader, last_id: int) -> int:
+        """Read the newest frame if it's new. Returns its id."""
+        frame_id, frame, frame_time = self.capture.latest_frame_info()
+        if frame is None or frame_id == last_id:
+            return last_id
+        started = time.perf_counter()
+        det = detect_screen(frame, reader.read(frame))
+        self.latest = det
+        self.latest_time = frame_time
+        self.latest_count += 1
+        self.detection.emit(det, (time.perf_counter() - started) * 1000)
+        for kind, value in self.tracker.feed(det):
+            self.event.emit(kind, value)
+        return frame_id

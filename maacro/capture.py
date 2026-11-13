@@ -113,12 +113,16 @@ def capture_window(hwnd: int) -> np.ndarray | None:
                                 ctypes.byref(header), DIB_RGB_COLORS)
         if rows != height:
             return None
-        return np.frombuffer(buffer.raw, dtype=np.uint8).reshape(height, width, 4).copy()
+        # One copy (not two: .raw would make an extra one of ~8 MB per frame).
+        return np.frombuffer(buffer, dtype=np.uint8).reshape(height, width, 4).copy()
     finally:
         _gdi32.SelectObject(memory_dc, previous)
         _gdi32.DeleteObject(bitmap)
         _gdi32.DeleteDC(memory_dc)
         _user32.ReleaseDC(hwnd, window_dc)
+
+
+PREVIEW_EVERY = 0.25   # seconds between live-view pictures (4 a second)
 
 
 class CaptureThread(QThread):
@@ -136,6 +140,7 @@ class CaptureThread(QThread):
         self._frame: np.ndarray | None = None
         self._frame_id = 0
         self._frame_time = 0.0
+        self._preview_at = 0.0
 
     def latest_frame(self) -> tuple[int, np.ndarray | None]:
         """The newest BGRA frame and a number that changes with every new frame."""
@@ -155,25 +160,42 @@ class CaptureThread(QThread):
     def run(self) -> None:
         hwnd = None
         while not self.isInterruptionRequested():
-            if not hwnd or not _user32.IsWindow(hwnd):
-                hwnd = find_roblox_window()
-            self.hwnd = hwnd
-            if not hwnd:
-                self._set_status("missing")
-            elif _user32.IsIconic(hwnd):
-                self._set_status("minimized")
-            else:
-                started = time.monotonic()
-                frame = capture_window(hwnd)
-                if frame is not None:
-                    with self._lock:
-                        self._frame = frame
-                        self._frame_id += 1
-                        self._frame_time = started
-                    self._set_status("found")
-                    height, width = frame.shape[:2]
-                    # BGRA bytes are what QImage calls RGB32.
-                    image = QImage(frame.data, width, height, width * 4,
-                                   QImage.Format.Format_RGB32).copy()
-                    self.frame_ready.emit(image)
-            self.msleep(self.interval_ms if hwnd else 1000)
+            try:
+                hwnd = self._step(hwnd)
+            except Exception:
+                # A capture can fail while Roblox is closing or resizing:
+                # look for the window again instead of ending the thread.
+                hwnd = None
+                self.msleep(1000)
+
+    def _step(self, hwnd):
+        """One capture: find the window, grab a frame. Returns the window."""
+        if not hwnd or not _user32.IsWindow(hwnd):
+            hwnd = find_roblox_window()
+        self.hwnd = hwnd
+        if not hwnd:
+            self._set_status("missing")
+        elif _user32.IsIconic(hwnd):
+            self._set_status("minimized")
+        else:
+            started = time.monotonic()
+            frame = capture_window(hwnd)
+            if frame is not None:
+                with self._lock:
+                    self._frame = frame
+                    self._frame_id += 1
+                    self._frame_time = started
+                self._set_status("found")
+                # The on-screen preview only needs a few pictures a second:
+                # building and drawing each one costs CPU the game could use.
+                if started - self._preview_at < PREVIEW_EVERY:
+                    self.msleep(self.interval_ms)
+                    return hwnd
+                self._preview_at = started
+                height, width = frame.shape[:2]
+                # BGRA bytes are what QImage calls RGB32.
+                image = QImage(frame.data, width, height, width * 4,
+                               QImage.Format.Format_RGB32).copy()
+                self.frame_ready.emit(image)
+        self.msleep(self.interval_ms if hwnd else 1000)
+        return hwnd

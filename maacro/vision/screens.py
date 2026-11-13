@@ -25,6 +25,7 @@ SCREEN_LABELS = {
     "unit_manager": "Unit manager",
     "end": "Match over",
     "after_end": "Return to lobby",
+    "disconnected": "Disconnected",
     "unknown": "—",
 }
 
@@ -161,7 +162,10 @@ def detect_screen(frame: np.ndarray, lines: list[OcrLine]) -> Detection:
     anchor = _find(lines, "total time", 0.85)
     if anchor and not (_find(lines, "waves completed") or _any(lines, "next", threshold=0.75)):
         anchor = None
-    if anchor:
+    # Roblox's own "Disconnected … Reconnect" box sits over everything.
+    if _any(lines, "reconnect") and _any(lines, "disconnected", "lost connection", "error code"):
+        det.screen = "disconnected"
+    elif anchor:
         det.screen = "end"
         det.result = _title_color(frame, anchor)
         if det.result is None:

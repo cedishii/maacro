@@ -1,6 +1,8 @@
 """The Main page: live game view, overview panel and process log."""
 from __future__ import annotations
 
+import time
+
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import (
@@ -189,8 +191,21 @@ class MainPage(QWidget):
 
     def _on_macro_finished(self) -> None:
         self.action_value.setText("—")
-        if self.stats.running:      # loop ended by itself
+        if self.stats.running:      # loop ended by itself (F3 sets running off first)
+            # Restart it, unless it keeps dying (then something needs fixing).
+            now = time.monotonic()
+            self._restarts = [t for t in getattr(self, "_restarts", []) if now - t < 600] + [now]
+            if len(self._restarts) <= 5:
+                self.log_panel.log("The macro stopped by itself — restarting it in 3 s.", "Warn")
+                QTimer.singleShot(3000, self._restart_macro)
+                return
+            self.log_panel.log("The macro keeps stopping by itself (6 times in 10 min) — "
+                               "leaving it stopped. Check the log above.", "Error")
             self.stats.stop()
+
+    def _restart_macro(self) -> None:
+        if self.stats.running and not self.macro.isRunning():
+            self.macro.start()
 
     def _poll_hotkeys(self) -> None:
         for vk, action in ((inp.VK_F1, self.start_macro), (inp.VK_F3, self.stop_macro)):
