@@ -40,7 +40,7 @@ yet — add a walk when we get them):
 - Haunted Mansion (zones saved, no walk yet)
 - Adventurer Town
 
-Set up: Snowy Town (D for 4 s, then jump twice), Storm Hideout (W for 2 s), Dungeon Throne (W for 0.6 s), Rain Village (D for 3 s; zones to be redrawn from the new spot). No walk: Shibuya District, Puppet Island, Mountain Temple, Sky Island, Assassin Park.
+Set up: Snowy Town (D for 4 s, then jump twice), Storm Hideout (W for 2 s), Dungeon Throne (W for 0.6 s), Rain Village (D for 3 s). No walk: Shibuya District, Puppet Island, Mountain Temple, Sky Island, Assassin Park.
 
 ## Infinity Castle zones (`maps/infinity_mansion/`)
 
