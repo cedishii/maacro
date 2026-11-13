@@ -8,7 +8,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import (
-    QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QSplitter,
+    QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSplitter,
     QVBoxLayout, QWidget,
 )
 
@@ -54,7 +54,13 @@ class MainPage(QWidget):
         layout.addWidget(left, 1)
 
         # Right: overview.
-        layout.addWidget(self._build_overview())
+        # Scrolls instead of squashing when the window is short.
+        overview = QScrollArea(widgetResizable=True)
+        overview.setFrameShape(QFrame.Shape.NoFrame)
+        overview.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        overview.setWidget(self._build_overview())
+        overview.setFixedWidth(344)
+        layout.addWidget(overview)
 
         self.stats.changed.connect(self._refresh_stats)
         self._clock = QTimer(self, interval=1000, timeout=self._refresh_time)
@@ -213,11 +219,13 @@ class MainPage(QWidget):
     @staticmethod
     def _result_card(grid: QGridLayout, column: int, title: str, style: str) -> QLabel:
         card = QFrame(objectName="Card")
+        card.setMinimumHeight(72)           # room for the big number
         layout = QVBoxLayout(card)
         layout.setContentsMargins(10, 6, 10, 8)
-        layout.setSpacing(0)
+        layout.setSpacing(2)
         layout.addWidget(QLabel(title, objectName="Muted"))
         value = QLabel("0", objectName=style)
+        value.setMinimumHeight(34)
         layout.addWidget(value)
         grid.addWidget(card, 0, column)
         return value

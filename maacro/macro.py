@@ -36,7 +36,7 @@ from .vision.cards import (choose_card, find_cards, needs_votes, predicted_vote_
 from .vision.numbers import GuardedNumberReader, make_number_reader
 from .vision.hotbar import read_unit_count
 from .vision.ocr import OcrLine, OcrReader
-from .vision.screens import Detection, _norm, fuzzy_in
+from .vision.screens import Detection, _lobby_menu, _norm, fuzzy_in
 
 # Seeing one of these means a new match is coming: start its plan fresh.
 NEW_MATCH_SCREENS = {"lobby", "match_found", "loading", "vote_start"}
@@ -73,7 +73,7 @@ WALK_MAX_WAVE = 3        # later than this, the match is under way: don't walk
 STUCK_LIMITS = {
     "after_end": 25, "end": 30, "card_pick": 40, "vote_start": 90,
     "unit_manager": 240, "join_matchmaking": 60, "lobby": 120,
-    "match_found": 120, "loading": 180, "disconnected": 60, "unknown": 60,
+    "match_found": 120, "loading": 90, "disconnected": 60, "unknown": 60,
 }
 RECOVER_EVERY = 10
 MATCHMAKING_WAIT = 20    # s in the lobby after matchmaking without a teleport → start again from Play
@@ -117,6 +117,11 @@ class MatchState:
 
 
 class MacroThread(QThread):
+    # What the "try everything" recovery may do in this mode (a mode that
+    # never leaves its own screens, like Infinity Castle, turns these off).
+    ALLOW_LOBBY_PLAY = True
+    ALLOW_RETURN_TO_LOBBY = True
+
     status = Signal(str)            # what the macro is doing right now
     log = Signal(str, str)          # message, level
     run_recorded = Signal(object)   # RunRecord, when a run ends
@@ -447,8 +452,65 @@ class MacroThread(QThread):
             except Exception:
                 pass
 
+    def _recover_any(self, hwnd: int, turn: int) -> str:
+        """Try everything, whatever the screen was read as: the lobby's Play,
+        any known button on screen, closing panels, clicking popups away.
+        Each turn starts with the next kind of try. Returns what it did."""
+        det = self.detector.latest
+        if det is None:
+            return ""
+        tries = (self._try_lobby, self._try_buttons, self._try_close, self._try_popups)
+        for i in range(len(tries)):
+            done = tries[(turn + i) % len(tries)](hwnd, det)
+            if done:
+                return "trying everything: " + done
+        return ""
+
+    def _try_lobby(self, hwnd: int, det: Detection) -> str:
+        """The lobby's buttons are on screen (even if the screen was misread)."""
+        if not self.ALLOW_LOBBY_PLAY or not _lobby_menu(det.lines):
+            return ""
+        self._matchmaking_at = -1e9
+        if self.click_play(hwnd, det):
+            if self._sleep(self.settings.teleport_wait):
+                self._walk_to_ring(hwnd)
+            return "the lobby's buttons are showing → clicked Play"
+        return "the lobby's buttons are showing → Play didn't work yet"
+
+    def _try_buttons(self, hwnd: int, det: Detection) -> str:
+        """Press a known button if its text is on screen (exact text only)."""
+        names = ["reconnect", "yes", "next", "find match"]
+        if self.ALLOW_RETURN_TO_LOBBY:
+            names.append("return to lobby")
+        for name in names:
+            line = self._line(det, name, exact=True)
+            if line is not None:
+                self._click_line(hwnd, line, line.text)
+                return f"pressed '{line.text}'"
+        return ""
+
+    def _try_close(self, hwnd: int, det: Detection) -> str:
+        if self._manager_open(det):
+            inp.press(hwnd, "f")
+            return "closed the unit manager"
+        if self._close_unit_panel(hwnd):
+            return "closed a unit's panel"
+        return ""
+
+    def _try_popups(self, hwnd: int, det: Detection) -> str:
+        width, height = self._frame_size()
+        inp.press(hwnd, "q")
+        inp.click(hwnd, width * 0.5, height * 0.12)
+        self._park_mouse(hwnd)
+        return "pressed Q and clicked the top of the screen (popups)"
+
     def _recover(self, hwnd: int, screen: str, step: int) -> str:
-        """One recovery step for `screen`. Returns what it did (for the log)."""
+        """One recovery step for `screen`. Returns what it did (for the log).
+        After two of the screen's own steps, every other step tries everything."""
+        if step >= 2 and step % 2 == 0:
+            action = self._recover_any(hwnd, (step - 2) // 2)
+            if action:
+                return action
         det = getattr(self, "_last_good", None)
         if det is None or det.screen != screen:
             det = self.detector.latest

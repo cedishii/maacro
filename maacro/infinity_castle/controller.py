@@ -38,6 +38,8 @@ ROOM_OVER_GRACE = 20    # s after a room ends with no loading/vote start: button
 
 
 class InfinityCastleThread(MacroThread):
+    ALLOW_LOBBY_PLAY = False        # never queue from the lobby
+    ALLOW_RETURN_TO_LOBBY = False   # never leave the castle
     progress = Signal(dict)     # {"room", "cleared", "retries", "note"} for the UI
 
     def __init__(self, capture, detector, settings: InfinityConfig | None = None, parent=None):
