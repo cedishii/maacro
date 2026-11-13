@@ -6,15 +6,14 @@ import time
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import (
-    QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QSplitter,
+    QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QSplitter,
     QVBoxLayout, QWidget,
 )
 
 from ..capture import CaptureThread
-from ..config import MacroConfig
 from ..control import input as inp
 from ..detector import DetectorThread
-from ..macro import MacroThread
+from ..modes import BY_KEY, MODES, last_mode, save_mode
 from ..stats import SessionStats
 from ..vision.screens import SCREEN_LABELS
 from . import theme
@@ -56,13 +55,20 @@ class MainPage(QWidget):
         detector.event.connect(self._on_game_event)
         detector.failed.connect(lambda msg: self.log_panel.log(msg, "Error"))
 
-        self.macro = MacroThread(capture, detector, parent=self)
-        self.macro.status.connect(self.action_value.setText)
-        self.macro.log.connect(self.log_panel.log)
-        self.macro.finished.connect(self._on_macro_finished)
-        self.macro.drop_found.connect(self.stats.add_drop)
-        self.macro.run_recorded.connect(
-            lambda record: self.stats.add_pearls(record.pearls) if record.pearls else None)
+        # One controller per mode; only the selected one is ever started.
+        self.macros = {}
+        for mode in MODES:
+            thread = mode.thread_class(capture, detector, parent=self)
+            thread.status.connect(self.action_value.setText)
+            thread.log.connect(self.log_panel.log)
+            thread.finished.connect(self._on_macro_finished)
+            thread.drop_found.connect(self.stats.add_drop)
+            thread.run_recorded.connect(
+                lambda record: self.stats.add_pearls(record.pearls) if record.pearls else None)
+            if hasattr(thread, "progress"):
+                thread.progress.connect(self._on_ic_progress)
+            self.macros[mode.key] = thread
+        self._set_mode(last_mode())
 
         # F1 = start, F3 = stop; checked even when Roblox is in front.
         self._keys_down: set[int] = set()
@@ -82,6 +88,16 @@ class MainPage(QWidget):
 
         # Status + start/stop
         box, box_layout = panel()
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("Mode", objectName="Muted"))
+        self.mode_box = QComboBox()
+        for mode in MODES:
+            self.mode_box.addItem(mode.label, mode.key)
+        self.mode_box.setToolTip("Which game mode to automate. Stop the macro to switch.")
+        self.mode_box.currentIndexChanged.connect(
+            lambda _: self._set_mode(self.mode_box.currentData()))
+        mode_row.addWidget(self.mode_box, 1)
+        box_layout.addLayout(mode_row)
         status_row = QHBoxLayout()
         self.status_dot = QLabel("●")
         self.status_text = QLabel()
@@ -119,6 +135,19 @@ class MainPage(QWidget):
         row, self.wave_value = key_value_row("Wave")
         box_layout.addWidget(row)
         col.addWidget(box)
+
+        # Infinity Castle progress (shown in that mode only)
+        self.ic_box, box_layout = panel("Infinity Castle")
+        row, self.ic_room_value = key_value_row("Room", "—")
+        box_layout.addWidget(row)
+        row, self.ic_cleared_value = key_value_row("Rooms Cleared", "0")
+        box_layout.addWidget(row)
+        row, self.ic_retries_value = key_value_row("Retries", "0")
+        box_layout.addWidget(row)
+        row, self.ic_note_value = key_value_row("Last Step", "—")
+        self.ic_note_value.setWordWrap(True)
+        box_layout.addWidget(row)
+        col.addWidget(self.ic_box)
 
         # Session results
         box, box_layout = panel("Session Results")
@@ -173,12 +202,42 @@ class MainPage(QWidget):
         grid.addWidget(card, 0, column)
         return value
 
+    # --- modes ---------------------------------------------------------
+    @property
+    def macro(self):
+        """The selected mode's controller."""
+        return self.macros[self.mode]
+
+    def _set_mode(self, key: str) -> None:
+        if key not in BY_KEY:
+            return
+        if getattr(self, "mode", None) == key:
+            return
+        if getattr(self, "mode", None) and (self.stats.running or self.macro.isRunning()):
+            # Switching while running: stop the running mode first.
+            self.stop_macro()
+        self.mode = key
+        save_mode(key)
+        index = self.mode_box.findData(key)
+        if self.mode_box.currentIndex() != index:
+            self.mode_box.setCurrentIndex(index)
+        self.ic_box.setVisible(key == "infinity_castle")
+        self.log_panel.log(f"Mode: {BY_KEY[key].label}.")
+
+    def _on_ic_progress(self, info: dict) -> None:
+        self.ic_room_value.setText("—" if info.get("room") is None else str(info["room"]))
+        self.ic_cleared_value.setText(str(info.get("cleared", 0)))
+        self.ic_retries_value.setText(str(info.get("retries", 0)))
+        if info.get("note"):
+            self.ic_note_value.setText(info["note"])
+
     # --- macro control -------------------------------------------------
     def start_macro(self) -> None:
-        if self.stats.running or self.macro.isRunning():
+        if self.stats.running or any(t.isRunning() for t in self.macros.values()):
             return
-        self.macro.settings = MacroConfig.load()
+        self.macro.settings = BY_KEY[self.mode].config_class.load()
         self.stats.start()
+        self.mode_box.setEnabled(False)
         self.macro.start()
 
     def stop_macro(self) -> None:
@@ -187,10 +246,12 @@ class MainPage(QWidget):
         self.macro.requestInterruption()
         self.stats.stop()
         inp.release_all()
+        self.mode_box.setEnabled(True)
         self.log_panel.log("Macro stopped.")
 
     def _on_macro_finished(self) -> None:
         self.action_value.setText("—")
+        self.mode_box.setEnabled(not self.stats.running)
         if self.stats.running:      # loop ended by itself (F3 sets running off first)
             # Restart it, unless it keeps dying (then something needs fixing).
             now = time.monotonic()
@@ -217,8 +278,10 @@ class MainPage(QWidget):
                 self._keys_down.discard(vk)
 
     def shutdown(self) -> None:
-        self.macro.requestInterruption()
-        self.macro.wait(3000)
+        for thread in self.macros.values():
+            thread.requestInterruption()
+        for thread in self.macros.values():
+            thread.wait(3000)
 
     def _manual_win(self) -> None:
         self.stats.add_win()

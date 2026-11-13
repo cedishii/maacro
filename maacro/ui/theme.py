@@ -53,9 +53,21 @@ QPushButton:hover {{ border-color: {ACCENT}; }}
 QPushButton:disabled {{ color: {MUTED}; }}
 #StartButton {{ background: {ACCENT}; border-color: {ACCENT}; color: white; font-weight: 600; }}
 #StartButton:disabled {{ background: {CARD}; border-color: {BORDER}; color: {MUTED}; }}
-QLineEdit, QComboBox {{
+QLineEdit, QComboBox, QSpinBox {{
     background: {CARD}; border: 1px solid {BORDER}; border-radius: 6px; padding: 4px 8px;
 }}
+#Card QLineEdit, #Card QSpinBox {{ background: {PANEL}; }}
+QSpinBox:disabled, QLineEdit:disabled {{ color: {MUTED}; }}
+#Card QCheckBox {{ background: transparent; }}
+
+/* Mode tabs */
+QTabWidget::pane {{ border: none; }}
+QTabBar::tab {{
+    background: {CARD}; color: {MUTED}; border: 1px solid {BORDER};
+    border-radius: 6px; padding: 6px 16px; margin-right: 6px;
+}}
+QTabBar::tab:selected {{ color: {TEXT}; border-color: {ACCENT}; }}
+QTabBar::tab:hover {{ color: {TEXT}; }}
 QComboBox QAbstractItemView {{ background: {CARD}; selection-background-color: {ACCENT}; }}
 QPlainTextEdit {{
     background: {CARD}; border: 1px solid {BORDER}; border-radius: 6px;

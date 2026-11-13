@@ -41,3 +41,8 @@ yet — add a walk when we get them):
 - Adventurer Town
 
 Set up: Snowy Town (D for 4 s, then jump twice), Storm Hideout (W for 2 s), Dungeon Throne (W for 0.6 s). No walk: Shibuya District, Puppet Island, Mountain Temple, Sky Island, Assassin Park.
+
+## Infinity Castle zones (`maps/infinity_mansion/`)
+
+Separate from the Summer zones above: the same map is played from another spot there,
+and the circles mark the path where damage units must go. Saved: Snowy Town.
