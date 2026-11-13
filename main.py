@@ -6,6 +6,11 @@ from pathlib import Path
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
+# Optional captcha helper: the installed `screen_numbers` package if there is
+# one, else a stand-in that reads nothing (the player types). Appended last,
+# so an installed copy always wins.
+sys.path.append(str(Path(__file__).resolve().parent / "maacro" / "_fallback"))
+
 from maacro import __version__
 from maacro.ui.main_window import MainWindow
 from maacro.ui.theme import STYLESHEET

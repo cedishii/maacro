@@ -1,0 +1,30 @@
+# Changelog
+
+## v0.2.0 — 2026-11-13
+
+**New**
+- **Modes:** Summer Event and the new **Infinity Castle** (Infinity Mansion) — plays a
+  room, then Next Room (or Retry after a defeat), forever. Pick it on the Modes page.
+- **Per-unit settings cards** on the Configs page (enabled, name, placements, placement
+  and upgrade priority), one tab per mode. Infinity Castle: mark damage units to place
+  them on the circled path.
+- **Discord updates:** a post per run (result, times, streak, map/mode, totals, drops,
+  end screen), a "Stage rewards" post per drop with its picture, and alerts when
+  MAACRO is stuck. Set up on the Settings page.
+- Maps: Shibuya District, Puppet Island, Dungeon Throne, Mountain Temple, Sky Island,
+  Assassin Park, Rain Village (walks right 3 s), Infinity Castle Snowy Town.
+
+**Sturdier for long grinds**
+- Stuck-screen watchdog: retries, then other ways past the screen, then "try
+  everything" (Play if the lobby shows, known buttons, panels, popups), then a beep and
+  a Discord alert.
+- Clicks Reconnect after a Roblox disconnect; restarts its own background parts if one
+  stops; starts over from Play if no teleport comes 20 s after matchmaking.
+- Closes a unit's panel that kept the unit manager from closing (units waited forever).
+- The lobby's "Travelling Merchant" sign (update 21) is no longer read as a loading screen.
+- Lighter on the PC: fewer captures, a slower preview, less copying; screenshots capped
+  (30 card picks, 100 end screens).
+
+## v0.1.0
+- First version: Summer Event loop (lobby → matchmaking → match → lobby), placing,
+  upgrading, card picks, map zones, win/loss tracking.

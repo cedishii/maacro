@@ -1,11 +1,24 @@
 # MAACRO
 
-A macro for Anime Adventures (Roblox). It watches the Roblox window, shows it live,
-and tracks runs, wins, losses and win rate.
+[![Latest release](https://img.shields.io/github/v/release/cedishii/maacro)](https://github.com/cedishii/maacro/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-## Run
+A free, open-source macro for **Anime Adventures** (Roblox) on Windows. It watches the
+Roblox window, plays for you — placing and upgrading units, picking cards, moving on to
+the next match — recovers by itself when something gets stuck, and posts results and
+drops to Discord.
 
-Double-click `run.bat`. The first time, it sets up Python packages.
+## Download
+
+1. Install **Python 3.11 or newer** from [python.org](https://www.python.org/downloads/)
+   (tick *Add python.exe to PATH*).
+2. Download **`MAACRO-v*.zip`** from the
+   [latest release](https://github.com/cedishii/maacro/releases/latest) and extract it.
+3. Double-click **`run.bat`**. The first time it installs what it needs (a few minutes),
+   then MAACRO opens.
+
+Keep Roblox open (behind other windows is fine, not minimized). Press **F1** to start,
+**F3** to stop.
 
 Or by hand:
 
@@ -15,7 +28,17 @@ python -m venv .venv
 .venv\Scripts\python main.py
 ```
 
-Keep Roblox open (it can be behind other windows, but not minimized).
+## Features
+
+- Two modes: **Summer Event** and **Infinity Castle** (see below).
+- Places and upgrades units by your per-unit settings, using circled placement zones per
+  map (and walks to a better spot first on some maps).
+- Picks cards (Star Golem first, buffs over debuffs, the mildest debuff when all are red,
+  never enemy regen).
+- Recovers on its own: retries, other ways past a stuck screen, Reconnect after a
+  disconnect, restarts its own parts if one stops — and alerts you if it truly can't.
+- Discord updates: run results, drops with pictures, stuck alerts.
+- Tracks wins, losses, win rate, pearls and drops per session.
 
 ## Modes
 
@@ -54,5 +77,15 @@ to get past it, then a beep after 10 minutes) and click Reconnect after a discon
 4. [x] In the match: place units (order on the Configs page), upgrade to Max via the unit manager, pick cards
    - Numbers (card votes, yen) go through `maacro/vision/numbers.py` (`NumberReader`); providers are
      registered in `PROVIDERS`, so another reader can be added later. The verification screen is
-     never read.
-5. [ ] Item tracking, Discord updates, settings
+     read only by the optional captcha helper (`screen-number-typer`).
+5. [x] Drop tracking, Discord updates, settings
+6. [x] Modes: Summer Event and Infinity Castle; per-unit settings; self-recovery
+
+## License and credits
+
+MIT — see [LICENSE](LICENSE). You're free to copy, change and share MAACRO; keep the
+license file. Libraries used and thanks: [CREDITS.md](CREDITS.md). Want to improve it or
+add maps/modes? See [CONTRIBUTING.md](CONTRIBUTING.md). What changed: [CHANGELOG.md](CHANGELOG.md).
+
+MAACRO is fan-made and not affiliated with Roblox or Anime Adventures. Using macros may go
+against a game's rules — use it at your own risk.
