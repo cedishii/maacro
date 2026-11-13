@@ -142,7 +142,7 @@ class MainPage(QWidget):
         box_layout.addWidget(row)
         row, self.ic_cleared_value = key_value_row("Rooms Cleared", "0")
         box_layout.addWidget(row)
-        row, self.ic_retries_value = key_value_row("Retries", "0")
+        row, self.ic_retries_value = key_value_row("Defeats (retried)", "0")
         box_layout.addWidget(row)
         row, self.ic_note_value = key_value_row("Last Step", "—")
         self.ic_note_value.setWordWrap(True)

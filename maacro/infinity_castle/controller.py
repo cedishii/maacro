@@ -52,6 +52,7 @@ class InfinityCastleThread(MacroThread):
         self._continue_tries = 0
         self._lobby_warned = False
         self._room_over_at: float | None = None
+        self._room_counted = False      # this room's Victory/Defeat is counted
 
     def _emit_progress(self, note: str = "") -> None:
         self.progress.emit({"room": self.room, "cleared": self.cleared,
@@ -83,6 +84,17 @@ class InfinityCastleThread(MacroThread):
             self._room_over_at = self._room_over_at or time.monotonic()
         elif screen in ("loading", "vote_start", "lobby"):
             self._room_over_at = None
+            self._room_counted = False
+        # Count the room from its end screen (Victory → cleared, Defeat →
+        # retried), once: the button that gets pressed later can't tell.
+        if (screen == "end" and det is not None and det.screen == "end" and det.result
+                and not self._room_counted):
+            self._room_counted = True
+            if det.result == "win":
+                self.cleared += 1
+            else:
+                self.retries += 1
+            self._emit_progress("Victory" if det.result == "win" else "Defeat — will retry")
         if det is not None:
             room = self._read_room(det)
             if room is not None and room != self.room:
@@ -182,10 +194,6 @@ class InfinityCastleThread(MacroThread):
         inp.click(hwnd, x, y)
         self._park_mouse(hwnd)
         if self._continue_tries == 1:
-            if label.startswith("Retry"):
-                self.retries += 1
-            elif label.startswith("Next Room"):
-                self.cleared += 1
             self._emit_progress(f"Pressed {label}")
         return True
 
