@@ -12,8 +12,9 @@
 - **Role: Party Member** (Summer Event and Infinity Castle): MAACRO plays the matches, the
   party leader picks portals and Return to lobby / Retry / Next Room.
 
-- **More than 6 units** (General and Infinity Castle): upgrades now go through every Unit
-  Overview page (the ">" arrow), not just the first 6 units; each page gets a turn.
+- **More than 6 units** (General and Infinity Castle): upgrades now scroll the Unit
+  Overview list (mouse wheel over the cards), not just the first 6 units; the top and the
+  bottom of the list take turns.
 - **Placements: Max** on the unit cards — place as many as the game's counter allows
   (e.g. 3/3 for Phoenix).
 

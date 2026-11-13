@@ -15,6 +15,7 @@ _user32 = ctypes.WinDLL("user32", use_last_error=True)
 INPUT_MOUSE, INPUT_KEYBOARD = 0, 1
 MOUSEEVENTF_MOVE = 0x0001
 MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP = 0x0002, 0x0004
+MOUSEEVENTF_WHEEL, WHEEL_DELTA = 0x0800, 120
 KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE = 0x0002, 0x0008
 ULONG_PTR = ctypes.c_size_t
 
@@ -113,6 +114,20 @@ def click(hwnd: int, x: float, y: float) -> None:
     time.sleep(0.06)
     _send(_mouse(MOUSEEVENTF_LEFTUP))
     time.sleep(0.05)
+
+
+def scroll(hwnd: int, x: float, y: float, notches: int) -> None:
+    """Mouse wheel at (x, y) inside the Roblox window: notches > 0 scrolls
+    down (towards the end of a list), < 0 up. Over the game world the wheel
+    zooms the camera, so (x, y) must be on the list."""
+    focus(hwnd)
+    move_to(hwnd, x, y)
+    step = -WHEEL_DELTA if notches > 0 else WHEEL_DELTA
+    for _ in range(abs(notches)):
+        wheel = INPUT(type=INPUT_MOUSE, u=_INPUTUNION(mi=MOUSEINPUT(0, 0, step & 0xFFFFFFFF,
+                                                                    MOUSEEVENTF_WHEEL, 0, 0)))
+        _send(wheel)
+        time.sleep(0.04)
 
 
 # --- keyboard --------------------------------------------------------------

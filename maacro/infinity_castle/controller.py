@@ -20,7 +20,7 @@ from PySide6.QtCore import Signal
 
 from ..control import input as inp
 from ..macro import MacroThread
-from ..upgrades import PagedUpgrades
+from ..upgrades import ScrollingUpgrades
 from ..vision.screens import Detection, _norm, fuzzy_in
 from .config import InfinityConfig
 from .maps import load_ic_maps
@@ -38,7 +38,7 @@ ALERT_TRIES = 20        # then beep and ask the player to look
 ROOM_OVER_GRACE = 20    # s after a room ends with no loading/vote start: buttons unread → fixed spot
 
 
-class InfinityCastleThread(PagedUpgrades, MacroThread):   # PagedUpgrades: more than 6 units
+class InfinityCastleThread(ScrollingUpgrades, MacroThread):   # ScrollingUpgrades: more than 6 units
     ALLOW_LOBBY_PLAY = False        # never queue from the lobby
     ALLOW_RETURN_TO_LOBBY = False   # never leave the castle
     # Its own party-level decision (Party Member mode leaves it to the leader).
