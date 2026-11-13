@@ -82,8 +82,23 @@ class InfinityCastleThread(MacroThread):
         # Recognise maps from this mode's own zones (not Summer's).
         if self._maps is not self._ic_maps:
             self._maps = self._ic_maps
-        super()._watch_map(det)
         screen = self.detector.tracker.screen
+        # Each room can be a different map, and the castle never goes back to
+        # the lobby (where Summer forgets the map): forget it on every new
+        # room, so the next one is recognised again (its own zones and walk,
+        # or none at all).
+        room = self._read_room(det) if det is not None else None
+        # (Rooms only go up: a lower number is a misread. The walk itself is
+        # reset only by the loading screen, so a misread mid-room can't make
+        # it walk away from units it already placed.)
+        new_room = room is not None and self.room is not None and room > self.room
+        if (screen == "loading" and getattr(self, "_ic_screen", None) != "loading") or new_room:
+            if self._map is not None:
+                self.log.emit(f"New room — forgetting {self._map.name}'s zones until "
+                              "this room's map is recognised.", "Info")
+            self._map, self._map_warned = None, False
+        self._ic_screen = screen
+        super()._watch_map(det)
         if screen in ("end", "after_end"):
             self._room_over_at = self._room_over_at or time.monotonic()
         elif screen in ("loading", "vote_start", "lobby"):
