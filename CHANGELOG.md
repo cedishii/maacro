@@ -12,6 +12,11 @@
 - **Role: Party Member** (Summer Event and Infinity Castle): MAACRO plays the matches, the
   party leader picks portals and Return to lobby / Retry / Next Room.
 
+- **More than 6 units** (General and Infinity Castle): upgrades now go through every Unit
+  Overview page (the ">" arrow), not just the first 6 units; each page gets a turn.
+- **Placements: Max** on the unit cards — place as many as the game's counter allows
+  (e.g. 3/3 for Phoenix).
+
 **Fixed**
 - Infinity Castle: each room's map is recognised again (it kept Snowy Town's zones and
   walk for every later room). Snowy Town walks right like Summer's and zooms out again.

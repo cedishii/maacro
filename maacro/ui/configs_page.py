@@ -31,7 +31,7 @@ def cards_from_config(config: MacroConfig) -> dict[str, dict]:
         cards[key] = {
             "enabled": count > 0,
             "name": config.unit_names.get(key, ""),
-            "placements": max(1, count),
+            "placements": min(MAX_PLACEMENTS, max(1, count)),
             "place_priority": first_seen.index(key) + 1 if key in first_seen else len(first_seen) + 1,
             "upgrade_priority": upgrades.index(key) + 1 if key in upgrades else len(upgrades) + 1,
         }
@@ -46,6 +46,44 @@ def config_lists(cards: dict[str, dict]) -> tuple[list[str], list[str]]:
     order = [k for k in by_place for _ in range(cards[k]["placements"])]
     upgrades = sorted(enabled, key=lambda k: (cards[k]["upgrade_priority"], k))
     return order, upgrades
+
+
+# "Max" placements: this many copies in the placement order. MacroThread
+# never places more than the hotbar counter allows (e.g. 3 for 0/3), so
+# Max simply fills the counter, whatever it is.
+MAX_PLACEMENTS = 10
+
+
+def order_text(order: list[str]) -> str:
+    """'6 5×3 1×2 4×Max' for the saved message."""
+    parts = []
+    for key in dict.fromkeys(order):
+        n = order.count(key)
+        parts.append(key if n == 1 else f"{key}×{'Max' if n >= MAX_PLACEMENTS else n}")
+    return " ".join(parts)
+
+
+class PlacementSpin(QSpinBox):
+    """1–9, then "Max" (as many as the game's counter allows)."""
+
+    def __init__(self):
+        super().__init__()
+        self.setRange(1, MAX_PLACEMENTS)
+        self.setToolTip("How many of this unit to place. Max = as many as the game "
+                        "allows (the 0/3 counter on its hotbar slot).")
+
+    def textFromValue(self, value: int) -> str:
+        return "Max" if value >= MAX_PLACEMENTS else str(value)
+
+    def valueFromText(self, text: str) -> int:
+        return MAX_PLACEMENTS if text.strip().lower().startswith("m") else int(text or 1)
+
+    def validate(self, text, pos):
+        from PySide6.QtGui import QValidator
+        t = text.strip().lower()
+        if t == "" or "max".startswith(t) or (t.isdigit() and 1 <= int(t) <= MAX_PLACEMENTS):
+            return QValidator.Acceptable if t in ("max",) or t.isdigit() else QValidator.Intermediate, text, pos
+        return QValidator.Invalid, text, pos
 
 
 class UnitCard(QFrame):
@@ -67,7 +105,7 @@ class UnitCard(QFrame):
         grid.addWidget(self.name, 1, 0, 1, 2)
         grid.addWidget(QLabel("Placements", objectName="Muted"), 2, 0)
         grid.addWidget(QLabel("Placement priority", objectName="Muted"), 2, 1)
-        self.placements = self._spin(1, 10, "How many of this unit to place.")
+        self.placements = PlacementSpin()
         self.place_priority = self._spin(1, 6, "1 = placed first.")
         grid.addWidget(self.placements, 3, 0)
         grid.addWidget(self.place_priority, 3, 1)
@@ -177,7 +215,7 @@ class ModeSettings(QWidget):
         except OSError as exc:
             self._message(f"Couldn't save: {exc}", theme.LOSS)
             return
-        self._message(f"Saved. Placement order: {' '.join(order)} · upgrades: {' '.join(upgrades)}",
+        self._message(f"Saved. Placement order: {order_text(order)} · upgrades: {' '.join(upgrades)}",
                       theme.WIN)
 
     def _message(self, text: str, color: str) -> None:
