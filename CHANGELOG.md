@@ -6,6 +6,9 @@
 - **General mode:** places units, upgrades them and waits — for any match (story, raids,
   portals…). You start the match and handle everything after it; voting Yes and picking
   cards are optional switches.
+- **General mode zones per unit** (`maps/general/`): Shibuya District saved — Elyssia,
+  C.E.O. and Bulby on the ground loops, Phoenix on the green patches. General also zooms
+  out again once the first wave starts.
 - **Role: Party Member** (Summer Event and Infinity Castle): MAACRO plays the matches, the
   party leader picks portals and Return to lobby / Retry / Next Room.
 

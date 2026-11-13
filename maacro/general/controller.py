@@ -14,9 +14,11 @@ touched. Voting Yes and picking cards are off unless switched on.
 """
 from __future__ import annotations
 
+from ..control import input as inp
 from ..macro import MacroThread
 from ..vision.screens import Detection
 from .config import GeneralConfig
+from .maps import GeneralMap, maps_for_general
 
 # Screens that are the player's to handle (no recovery clicks on them).
 PLAYER_SCREENS = ("lobby", "join_matchmaking", "captcha", "match_found", "loading",
@@ -31,17 +33,53 @@ class GeneralThread(MacroThread):
     def __init__(self, capture, detector, settings: GeneralConfig | None = None, parent=None):
         super().__init__(capture, detector, settings or GeneralConfig(), parent)
         self._in_game = False
+        self._general_maps = []
+        self._rezoomed = False
 
     def run(self) -> None:
         self._in_game = False
+        self._general_maps = maps_for_general()
         self.log.emit("General mode — places units, upgrades them and waits. Start a match "
                       "yourself; MAACRO never clicks Play, Next, Replay or Return to lobby.", "Info")
         super().run()
 
     def _watch_map(self, det: Detection | None) -> None:
-        if not getattr(self.settings, "use_map_zones", True):
-            self._maps = []         # automatic spots, no walking
+        # General's own zones (maps/general/), then Summer's for other maps.
+        wanted = getattr(self, "_general_maps", []) if getattr(self.settings, "use_map_zones", True) else []
+        if self._maps is not wanted:
+            self._maps = wanted     # [] = automatic spots, no walking
         super()._watch_map(det)
+
+    def _new_match(self) -> None:
+        super()._new_match()
+        self._rezoomed = False
+
+    def _on_in_match(self, hwnd: int) -> None:
+        """Zoom out at the start of every match (MacroThread does that), and
+        again once the first wave is up: the countdown ending can reset the
+        camera, and the zones are drawn from the zoomed-out view."""
+        seconds = getattr(self.settings, "zoom_out_seconds", 0)
+        if (self.match.zoomed and not getattr(self, "_rezoomed", False) and seconds > 0
+                and self.detector.tracker.wave is not None):
+            self._rezoomed = True
+            self._say("Wave started — zooming out again (O)")
+            inp.press(hwnd, "o", hold=seconds)
+            self._sleep(0.5)
+            return
+        super()._on_in_match(hwnd)
+
+    def _place_next(self, hwnd: int) -> None:
+        """On a General map, each unit uses its own zones (e.g. Phoenix on
+        Shibuya's green patches); a unit with none uses automatic spots."""
+        m = self.match
+        if not isinstance(self._map, GeneralMap) or not m.pending:
+            super()._place_next(hwnd)
+            return
+        whole, self._map = self._map, self._map.for_unit(m.pending[0])
+        try:
+            super()._place_next(hwnd)
+        finally:
+            self._map = whole
 
     # --- the player's screens: just wait ---------------------------------
     def _wait(self, text: str) -> None:

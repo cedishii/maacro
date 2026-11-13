@@ -46,3 +46,18 @@ Set up: Snowy Town (D for 4 s, then jump twice), Storm Hideout (W for 2 s), Dung
 
 Separate from the Summer zones above: the same map is played from another spot there,
 and the circles mark the path where damage units must go. Saved: Snowy Town.
+
+## General mode zones (`maps/general/`)
+
+General mode looks here first, then falls back to the Summer zones above.
+Each map can give **different units different zones** (`zone_sets`), one
+screenshot per group of units, all from the same zoomed-out camera:
+
+```python
+from maacro.general.maps import create_general_map
+create_general_map("Shibuya District", [(["1", "5", "6"], "ground.png"), (["4"], "phoenix.png")])
+```
+
+A unit that isn't in any group uses automatic spots. Saved: Shibuya District
+(units 1, 5, 6 on the ground loops around the spawn; unit 4, Phoenix, on the
+green patches: left strip, top-left, bus roof, right road).
