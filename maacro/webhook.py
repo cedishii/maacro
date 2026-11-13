@@ -9,6 +9,7 @@ failing connection never holds up the macro or the window.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import urllib.error
@@ -18,17 +19,23 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import __version__
+
 ROOT = Path(__file__).resolve().parents[1]
 WEBHOOK_PATH = ROOT / "webhook.json"
 RUNS_DIR = ROOT / "runs"
 GREEN, RED, AMBER, BLUE = 0x4ADE80, 0xF87171, 0xFBBF24, 0x8B5CF6
 ALERT_EVERY = 300       # seconds: at most one stuck alert per 5 minutes
+# Side colour of a drop post, by rarity.
+RARITY_COLORS = {"common": 0x9CA3AF, "uncommon": 0x4ADE80, "rare": 0x60A5FA, "epic": 0xA78BFA,
+                 "legendary": 0xFBBF24, "mythic": 0xF472B6, "secret": 0xEF4444, "exclusive": 0x22D3EE}
 
 
 @dataclass
 class WebhookConfig:
     url: str = ""
     on_run_end: bool = True         # a message after every win/loss
+    on_drop: bool = True            # a "Stage rewards" post per drop, with its picture
     screenshot: bool = True         # attach the end screen
     on_stuck: bool = True           # alert when MAACRO says it needs you
     mention: str = ""               # optional Discord user ID to ping on alerts
@@ -56,6 +63,10 @@ class WebhookConfig:
                                     "https://canary.discord.com/api/webhooks/"))
 
 
+def _footer(mode: str = "") -> dict:
+    return {"text": f"MAACRO v{__version__}" + (f" • {mode}" if mode else "")}
+
+
 def _post(url: str, payload: dict, image: Path | None = None, timeout: float = 15) -> str:
     """Send one webhook message. Returns "" on success, else the error."""
     if image is not None and image.exists():
@@ -64,7 +75,8 @@ def _post(url: str, payload: dict, image: Path | None = None, timeout: float = 1
             f"--{boundary}\r\nContent-Disposition: form-data; name=\"payload_json\"\r\n"
             f"Content-Type: application/json\r\n\r\n".encode() + json.dumps(payload).encode() + b"\r\n",
             f"--{boundary}\r\nContent-Disposition: form-data; name=\"files[0]\"; filename=\"{image.name}\"\r\n"
-            f"Content-Type: image/png\r\n\r\n".encode() + image.read_bytes() + b"\r\n",
+            f"Content-Type: {'image/jpeg' if image.suffix == '.jpg' else 'image/png'}\r\n\r\n".encode()
+            + image.read_bytes() + b"\r\n",
             f"--{boundary}--\r\n".encode(),
         ]
         body, kind = b"".join(parts), f"multipart/form-data; boundary={boundary}"
@@ -116,13 +128,36 @@ class Notifier:
         label = (name or "Item") + (f" ({rarity})" if rarity else "")
         self.drops.append(label)
 
-    def _send(self, payload: dict, image: Path | None = None) -> None:
+    def _send(self, payload: dict, image: Path | None = None, delete_after: bool = False) -> None:
         url = self.config.url
         def work():
             error = _post(url, payload, image)
+            if delete_after and image is not None:
+                try:
+                    os.remove(image)
+                except OSError:
+                    pass
             if error:
                 self.log(f"Discord update not sent: {error}", "Warn")
         threading.Thread(target=work, daemon=True).start()
+
+    def drop(self, name: str, rarity: str, image: Path | None, mode: str = "") -> None:
+        """A "Stage rewards" post for one drop, with the drop popup's picture.
+        `image` is a temporary file; it's deleted once sent."""
+        if not (self.config.valid and self.config.on_drop):
+            if image is not None:
+                try:
+                    os.remove(image)
+                except OSError:
+                    pass
+            return
+        title = name or "Item"
+        embed = {"title": "Stage rewards", "color": RARITY_COLORS.get(rarity.lower(), BLUE),
+                 "description": f"**{title}**" + (f"\n{rarity.title()}" if rarity else ""),
+                 "footer": _footer(mode), "timestamp": datetime.now(timezone.utc).isoformat()}
+        if image is not None:
+            embed["image"] = {"url": f"attachment://{image.name}"}
+        self._send({"username": "MAACRO", "embeds": [embed]}, image, delete_after=True)
 
     def run_ended(self, record, stats, mode_label: str, room: int | None = None) -> None:
         """The message after a win or loss (record: runs.RunRecord)."""
@@ -152,7 +187,7 @@ class Notifier:
             fields.append({"name": "🎁 Drops", "value": "\n".join(f"• {d}" for d in self.drops)[:1000],
                            "inline": False})
         embed = {"title": title, "color": GREEN if win else RED, "fields": fields,
-                 "footer": {"text": "MAACRO"}, "timestamp": datetime.now(timezone.utc).isoformat()}
+                 "footer": _footer(mode_label), "timestamp": datetime.now(timezone.utc).isoformat()}
         image = None
         if self.config.screenshot and record.screenshot:
             image = RUNS_DIR / record.screenshot
@@ -171,12 +206,13 @@ class Notifier:
         ping = f"<@{self.config.mention.strip()}> " if self.config.mention.strip().isdigit() else ""
         self._send({"username": "MAACRO", "content": ping or None,
                     "embeds": [{"title": "⚠ MAACRO needs you", "description": message[:1500],
-                                "color": AMBER, "timestamp": datetime.now(timezone.utc).isoformat()}]})
+                                "color": AMBER, "footer": _footer(),
+                                "timestamp": datetime.now(timezone.utc).isoformat()}]})
 
     def test(self, url: str) -> str:
         """Send a test message right away (called from the Settings page).
         Returns "" on success, else the error."""
         return _post(url, {"username": "MAACRO", "embeds": [{
             "title": "MAACRO is connected", "color": BLUE,
-            "description": "Run results and alerts will be posted here.",
+            "description": "Run results, drops and alerts will be posted here.", "footer": _footer(),
             "timestamp": datetime.now(timezone.utc).isoformat()}]})

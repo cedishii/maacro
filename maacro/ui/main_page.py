@@ -1,7 +1,9 @@
 """The Main page: live game view, overview panel and process log."""
 from __future__ import annotations
 
+import tempfile
 import time
+from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QImage
@@ -77,6 +79,7 @@ class MainPage(QWidget):
             thread.finished.connect(self._on_macro_finished)
             thread.drop_found.connect(self.stats.add_drop)
             thread.drop_found.connect(self.notifier.note_drop)
+            thread.drop_found.connect(self._post_drop)
             thread.run_recorded.connect(
                 lambda record: self.stats.add_pearls(record.pearls) if record.pearls else None)
             thread.run_recorded.connect(self._post_run)
@@ -234,6 +237,18 @@ class MainPage(QWidget):
         room = getattr(self.macro, "room", None) if self.mode == "infinity_castle" else None
         QTimer.singleShot(3000, lambda: self.notifier.run_ended(record, self.stats, mode, room))
 
+    def _post_drop(self, name: str, rarity: str) -> None:
+        """Post the drop with the newest picture of the game (the drop popup)."""
+        if not (self.notifier.config.valid and self.notifier.config.on_drop):
+            return
+        path = None
+        image = getattr(self, "_last_image", None)
+        if image is not None:
+            path = Path(tempfile.gettempdir()) / f"maacro_drop_{time.time_ns()}.jpg"
+            if not image.save(str(path), "JPG", 90):
+                path = None
+        self.notifier.drop(name, rarity, path, BY_KEY[self.mode].label)
+
     def _watch_for_alerts(self, message: str, level: str) -> None:
         if level == "Error" and ("check the game" in message or "Still stuck" in message):
             self.notifier.stuck(message)
@@ -349,6 +364,7 @@ class MainPage(QWidget):
         self.time_value.setText(self.stats.session_time_text())
 
     def _on_frame(self, image: QImage) -> None:
+        self._last_image = image            # for drop posts
         self.live_view.set_frame(image)
         self.resolution_value.setText(f"{image.width()} × {image.height()}")
 

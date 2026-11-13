@@ -40,8 +40,9 @@ class SettingsPage(QWidget):
         box_layout.addLayout(form)
         self.on_run_end = QCheckBox("Post every win/loss (times, streak, map/mode, totals, drops)")
         self.screenshot = QCheckBox("Attach the end-screen picture")
+        self.on_drop = QCheckBox("Post each drop (Stage rewards) with a picture of it")
         self.on_stuck = QCheckBox("Alert when MAACRO is stuck and needs you (at most every 5 min)")
-        for widget in (self.on_run_end, self.screenshot, self.on_stuck):
+        for widget in (self.on_run_end, self.screenshot, self.on_drop, self.on_stuck):
             box_layout.addWidget(widget)
         row = QHBoxLayout()
         save = QPushButton("Save", objectName="StartButton")
@@ -69,11 +70,13 @@ class SettingsPage(QWidget):
         self.mention.setText(config.mention)
         self.on_run_end.setChecked(config.on_run_end)
         self.screenshot.setChecked(config.screenshot)
+        self.on_drop.setChecked(config.on_drop)
         self.on_stuck.setChecked(config.on_stuck)
 
     def _config(self) -> WebhookConfig:
         return WebhookConfig(url=self.url.text().strip(), on_run_end=self.on_run_end.isChecked(),
                              screenshot=self.screenshot.isChecked(), on_stuck=self.on_stuck.isChecked(),
+                             on_drop=self.on_drop.isChecked(),
                              mention=self.mention.text().strip())
 
     def save(self) -> None:
