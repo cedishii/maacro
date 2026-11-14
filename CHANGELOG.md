@@ -3,6 +3,11 @@
 ## Unreleased
 
 **New**
+- **Sky Portal, new spot:** during Vote start it zooms out, votes Yes, then walks to the
+  placing spot (Shift held: forward 4 s, left 3 s, forward 2 s — `walk_route` in its
+  settings). Bulby on the green patch, 3 C.E.O. around it, 2 Elyssia on the path (up to
+  upgrade 2), 3 Phoenix/Marco on the snow ledges (Max). Farm units first, then Phoenix and
+  Elyssia. Spots beside the hotbar can be used now.
 - **Sky Portal, new setup:** Bulby, 3 C.E.O., 2 Elyssia, 2 Fishi, then Phoenix ×Max on the
   balcony (avoiding the marked spot); Water Goddess isn't placed. Farm units maxed first,
   then Elyssia up to upgrade 2, Fishi up to 6, Phoenix up to 4 — read from the bar under

@@ -12,18 +12,20 @@ SKY_PORTAL_CONFIG_PATH = Path(__file__).resolve().parents[2] / "sky_portal_confi
 
 @dataclass
 class SkyPortalConfig(GeneralConfig):
-    # Bulby first, the 3 C.E.O.s, 2 Elyssia, 2 Fishi, then as many Phoenix as
-    # the game allows ("Max") on the balcony. Water Goddess (2) isn't placed.
-    placement_order: list[str] = field(default_factory=lambda: ["6", "5", "5", "5", "1", "1", "3", "3"]
-                                       + ["4"] * 10)
+    # Bulby first, the 3 C.E.O.s, 2 Elyssia, then 3 Phoenix (Marco). Water
+    # Goddess (2) and Fishi (3) aren't placed.
+    placement_order: list[str] = field(default_factory=lambda: ["6", "5", "5", "5", "1", "1", "4", "4", "4"])
     unit_names: dict[str, str] = field(default_factory=lambda: {
         "1": "Elyssia", "2": "Water Goddess", "3": "Fishi", "4": "Phoenix", "5": "C.E.O.", "6": "Bulby"})
-    upgrade_priority: list[str] = field(default_factory=lambda: ["6", "5", "4", "1", "3"])
-    # Upgrade these units only up to this many upgrades (segments on their bar
-    # in the Unit Overview); others go to Max.
-    upgrade_caps: dict[str, int] = field(default_factory=lambda: {"1": 2, "3": 6, "4": 4})
+    upgrade_priority: list[str] = field(default_factory=lambda: ["6", "5", "4", "1"])
     # Farm units: maxed before any other unit is upgraded (farm_first.py).
     farm_units: list[str] = field(default_factory=lambda: ["6", "5"])
+    # Upgrade these units only up to this many upgrades (segments on their bar
+    # in the Unit Overview); others go to Max.
+    upgrade_caps: dict[str, int] = field(default_factory=lambda: {"1": 2})
+    # Walk from the spawn to the placing spot during Vote start, holding Shift
+    # (walk_sprint): [key, seconds] steps.
+    walk_route: list = field(default_factory=lambda: [["w", 4.0], ["a", 3.0], ["w", 2.0]])
     auto_card_pick: bool = False
     auto_vote_start: bool = True        # the vote is everyone's, not the leader's
 

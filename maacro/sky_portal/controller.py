@@ -1,7 +1,7 @@
 """Sky Portal, as a party member: someone else hosts the portal.
 
     lobby: wait → vote start: zoom out, vote Yes (everyone votes, not just
-    the leader)
+    the leader), walk to the placing spot (forward, left, forward)
     → zoom out → place EVERY unit on its spot (maps/sky_portal/) → max the
     farm units (Bulby, C.E.O.) → then upgrade the damage units as fast as
     money allows → wait for the next match.
@@ -52,13 +52,15 @@ MAX_PLACEMENTS_GUARD = 10   # "Max" placements (configs_page.MAX_PLACEMENTS)
 
 
 class SkyPortalThread(FarmFirst, GeneralThread):
-    INTRO = ("Sky Portal (party member) — votes Yes, places every unit, maxes the farm units, "
-             "then the damage units. Never clicks Play, Next, Replay or Return to lobby.")
+    INTRO = ("Sky Portal (party member) — votes Yes, walks to the spot, places every unit, "
+             "maxes the farm units, then the damage units. Never clicks Play, Next, Replay or Return to lobby.")
 
     _shift = None
     _align_tries = 0
     _reference = None
     _vote_zoomed = False
+    _vote_seen = False
+    _route_walked = False
 
     def __init__(self, capture, detector, settings: SkyPortalConfig | None = None, parent=None):
         super().__init__(capture, detector, settings or SkyPortalConfig(), parent)
@@ -76,6 +78,8 @@ class SkyPortalThread(FarmFirst, GeneralThread):
         self._missing_reads: dict[str, int] = {}
         self._refilled_at: dict[str, float] = {}
         self._shift = None              # spawn offset in live pixels, once measured
+        self._vote_seen = False
+        self._route_walked = False
         self._align_tries = 0
         self._vote_zoomed = False
 
@@ -226,17 +230,59 @@ class SkyPortalThread(FarmFirst, GeneralThread):
         super()._watchdog(hwnd, screen)
 
     def _on_vote_start(self, hwnd: int) -> None:
-        # Zoom out now, so placing starts the moment the match does (the
-        # line-up check zooms out again if the camera was reset).
+        """Zoom out, vote Yes, then walk to the placing spot — all while the
+        vote runs, so placing starts the moment the match does."""
+        self._vote_seen = True
         seconds = getattr(self.settings, "zoom_out_seconds", 0)
         if not self._vote_zoomed and seconds > 0 and self.settings.place_units:
             self._vote_zoomed = True
-            self._say("Vote start — zooming out (O) while waiting")
+            self._say("Vote start — zooming out (O)")
             inp.press(hwnd, "o", hold=seconds)
             self.match.zoomed = True        # don't zoom again when the match starts
             self._rezoomed = True
             return
         super()._on_vote_start(hwnd)        # votes Yes if switched on, else waits
+        voted = self.match.voted_start or not self.settings.auto_vote_start
+        if not self._route_walked and self.settings.place_units and (
+                voted or time.monotonic() - self._screen_since > 4):
+            self._walk_route(hwnd)
+
+    def _on_in_match(self, hwnd: int) -> None:
+        # The vote ended before the walk (everyone voted at once): walk now,
+        # before placing anything.
+        if (self._vote_seen and not self._route_walked and self.settings.place_units
+                and not self.match.placed):
+            self._walk_route(hwnd)
+            return
+        super()._on_in_match(hwnd)
+
+    def _walk_route(self, hwnd: int) -> None:
+        """Walk the route from the spawn to the placing spot (walk_route:
+        [key, seconds] steps), sprinting with Shift if walk_sprint is on."""
+        self._route_walked = True
+        route = [(str(k).lower(), float(t)) for k, t in (getattr(self.settings, "walk_route", []) or [])
+                 if str(k).lower() in inp.SCAN_CODES]
+        if not route:
+            return
+        text = ", ".join(f"{k.upper()} {t:g} s" for k, t in route)
+        self._say(f"Walking to the placing spot ({text})")
+        inp.focus(hwnd)
+        sprint = getattr(self.settings, "walk_sprint", True)
+        if sprint:
+            inp.key_down("shift")
+        try:
+            for key, seconds in route:
+                inp.key_down(key)
+                try:
+                    if not self._sleep(seconds):
+                        return
+                finally:
+                    inp.key_up(key)
+        finally:
+            if sprint:
+                inp.key_up("shift")
+        self.log.emit(f"Walked to the placing spot ({text}).", "Info")
+        self._sleep(0.3)
 
     def _on_lobby(self, hwnd: int) -> None:
         self._wait("in the lobby (the party leader starts the portal)")

@@ -70,8 +70,15 @@ class PointZones(MapZones):
                 out += [(x + radius * math.cos(2 * math.pi * (i + 0.5 * r) / count),
                          y + radius * math.sin(2 * math.pi * (i + 0.5 * r) / count))
                         for i in range(count)]
-        return [(x, y) for x, y in out if 0.03 * frame_w < x < 0.86 * frame_w
-                and 0.10 * frame_h < y < 0.82 * frame_h]
+        return [(x, y) for x, y in out if usable_point(x, y, frame_w, frame_h)]
+
+
+def usable_point(x: float, y: float, frame_w: int, frame_h: int) -> bool:
+    """Inside the window and off the game's buttons: the top bar, the hotbar
+    (bottom middle) and the window's very bottom. Beside the hotbar is fine."""
+    if not (0.02 * frame_w < x < 0.98 * frame_w and 0.10 * frame_h < y < 0.97 * frame_h):
+        return False
+    return not (0.31 * frame_w < x < 0.70 * frame_w and y > 0.85 * frame_h)
 
 
 def _polygons(raw) -> list[list[tuple[int, int]]]:

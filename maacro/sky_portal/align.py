@@ -15,13 +15,14 @@ import cv2
 import numpy as np
 
 # Scenery patches in sky_portal_reference.png (screenshot pixels, title bar
-# included), clear of the drawn circle, the unit spots and the players:
+# included), clear of the drawn marks, the unit spots, the swaying palm tree,
+# the players and the game's panels. A map file can give its own ("landmarks").
 # left, top, right, bottom.
 PATCHES = [
-    (900, 130, 1170, 290),   # the purple building right of the path
-    (370, 265, 640, 360),    # the left building's wall, under the balcony
-    (100, 455, 400, 535),    # planks and fence, lower left
-    (880, 300, 1120, 420),   # snow and lamp post right of the path
+    (1000, 150, 1220, 330),  # the white house right of the palm tree (windows)
+    (0, 560, 330, 700),      # the purple stone wall, lower left
+    (230, 60, 430, 170),     # the pink houses, upper left
+    (300, 470, 620, 555),    # the snow below the ledges
 ]
 SEARCH = 0.08       # × width: how far a patch is looked for around its place
 MIN_SCORE = 0.55    # match quality for a patch to count
@@ -34,7 +35,8 @@ def _gray(image: np.ndarray) -> np.ndarray:
     return image
 
 
-def spawn_shift(reference: np.ndarray, titlebar: int, frame: np.ndarray) -> tuple[float, float, int] | None:
+def spawn_shift(reference: np.ndarray, titlebar: int, frame: np.ndarray,
+                patches=None) -> tuple[float, float, int] | None:
     """(dx, dy, patches agreeing) in live pixels, or None if it can't tell."""
     ref = _gray(reference)[titlebar:]
     live = _gray(frame)
@@ -44,7 +46,7 @@ def spawn_shift(reference: np.ndarray, titlebar: int, frame: np.ndarray) -> tupl
         ref = cv2.resize(ref, (w, int(round(ref.shape[0] * scale))))
     search = int(SEARCH * w)
     found = []
-    for left, top, right, bottom in PATCHES:
+    for left, top, right, bottom in patches or PATCHES:
         x0, y0 = int(left * scale), int((top - titlebar) * scale)
         x1, y1 = int(right * scale), int((bottom - titlebar) * scale)
         patch = ref[y0:y1, x0:x1]
