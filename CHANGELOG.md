@@ -3,6 +3,11 @@
 ## Unreleased
 
 **New**
+- **Sky Portal setup:** Bulby (blue), 3 C.E.O. (green), 2 Elyssia (grey), 2 Fishi (red) on
+  the exact spots drawn on `maps/sky_portal/sky_portal_units.png`; every unit is placed
+  before any upgrade; farm units (Bulby, C.E.O.) are maxed first, then the damage units.
+  Smart placing: spots taken → tries close by; a unit missing from the Unit Overview is
+  placed again. "Farm unit" tick box on the Sky Portal Configs tab.
 - **Sky Portal mode (party member):** waits in the lobby and through the vote (never votes;
   the match starts when the party votes or the timer ends), then zooms out, places and
   upgrades your units and waits. Never clicks Play, Next, Replay or Return to lobby. Own

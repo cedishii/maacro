@@ -94,7 +94,7 @@ class PlacementSpin(QSpinBox):
 class UnitCard(QFrame):
     """Settings for one hotbar slot."""
 
-    def __init__(self, key: str, path_option: bool, parent=None):
+    def __init__(self, key: str, path_option: bool, farm_option: bool = False, parent=None):
         super().__init__(parent)
         self.setObjectName("Card")
         self.key = key
@@ -126,6 +126,12 @@ class UnitCard(QFrame):
             self.path.setToolTip("Placed in the circled path zones of the map; "
                                  "other units are kept out of them.")
             grid.addWidget(self.path, 5, 1)
+        self.farm = None
+        if farm_option:
+            self.farm = QCheckBox("Farm unit (maxed first)")
+            self.farm.setToolTip("Farm units are upgraded to Max before any other unit "
+                                 "(needs the name filled in).")
+            grid.addWidget(self.farm, 5, 1)
         self.enabled.toggled.connect(self._enable)
         self.upgrade.toggled.connect(lambda _: self._enable(self.enabled.isChecked()))
 
@@ -137,12 +143,12 @@ class UnitCard(QFrame):
         return spin
 
     def _enable(self, on: bool) -> None:
-        for widget in (self.placements, self.place_priority, self.upgrade, self.path):
+        for widget in (self.placements, self.place_priority, self.upgrade, self.path, self.farm):
             if widget is not None:
                 widget.setEnabled(on)
         self.upgrade_priority.setEnabled(on and self.upgrade.isChecked())
 
-    def set_values(self, values: dict, on_path: bool) -> None:
+    def set_values(self, values: dict, on_path: bool, farm: bool = False) -> None:
         self.enabled.setChecked(values["enabled"])
         self.name.setText(values["name"])
         self.placements.setValue(values["placements"])
@@ -151,6 +157,8 @@ class UnitCard(QFrame):
         self.upgrade.setChecked(values.get("upgrade", True))
         if self.path is not None:
             self.path.setChecked(on_path)
+        if self.farm is not None:
+            self.farm.setChecked(farm)
         self._enable(values["enabled"])
 
     def values(self) -> dict:
@@ -168,6 +176,7 @@ class ModeSettings(QWidget):
         super().__init__(parent)
         self.config_class = config_class
         self.ic = issubclass(config_class, InfinityConfig)
+        self.farm = "farm_units" in getattr(config_class, "__dataclass_fields__", {})
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 8, 0, 0)
         layout.setSpacing(10)
@@ -176,7 +185,7 @@ class ModeSettings(QWidget):
         grid.setSpacing(10)
         self.cards = {}
         for index, key in enumerate(VALID_KEYS):
-            card = UnitCard(key, path_option=self.ic)
+            card = UnitCard(key, path_option=self.ic, farm_option=self.farm)
             grid.addWidget(card, index // 2, index % 2)
             self.cards[key] = card
         layout.addLayout(grid)
@@ -203,8 +212,9 @@ class ModeSettings(QWidget):
 
     def show_config(self, config: MacroConfig) -> None:
         path = set(getattr(config, "path_units", []))
+        farm = set(getattr(config, "farm_units", []))
         for key, values in cards_from_config(config).items():
-            self.cards[key].set_values(values, key in path)
+            self.cards[key].set_values(values, key in path, key in farm)
         for name, box in self.switches.items():
             box.setChecked(bool(getattr(config, name)))
 
@@ -220,6 +230,9 @@ class ModeSettings(QWidget):
         if self.ic:
             config.path_units = [k for k, card in self.cards.items()
                                  if card.path is not None and card.path.isChecked() and cards[k]["enabled"]]
+        if self.farm:
+            config.farm_units = [k for k, card in self.cards.items()
+                                 if card.farm is not None and card.farm.isChecked() and cards[k]["enabled"]]
         for name, box in self.switches.items():
             setattr(config, name, box.isChecked())
         try:
@@ -275,7 +288,7 @@ class ConfigsPage(QWidget):
         tabs.addTab(ModeSettings(SkyPortalConfig, {
             "place_units": "Place units",
             "upgrade_units": "Upgrade units to Max (unit manager, F)",
-            "use_map_zones": "Use saved map zones (maps/general, e.g. from the Recorder); off = automatic spots",
+            "use_map_zones": "Use the Sky Portal spots (maps/sky_portal); off = automatic spots",
             "auto_card_pick": "Pick cards if a card vote shows up (off = wait)",
         }), "Sky Portal")
         layout.addWidget(tabs)

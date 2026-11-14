@@ -1,0 +1,104 @@
+{
+  "name": "Sky Portal",
+  "anchor": null,
+  "size": [
+    1533,
+    812
+  ],
+  "titlebar": 23,
+  "note": "Circle centres from sky_portal_units.png: blue = Bulby (6), green = C.E.O. (5), grey = Elyssia (1), red = Fishi (3). Used on every Sky Portal match, lined up by the window size (the camera after zooming out).",
+  "zone_sets": [
+    {
+      "units": [
+        "6"
+      ],
+      "unit": "Bulby",
+      "points": [
+        [
+          499,
+          619
+        ],
+        [
+          468,
+          606
+        ],
+        [
+          532,
+          628
+        ]
+      ]
+    },
+    {
+      "units": [
+        "5"
+      ],
+      "unit": "C.E.O.",
+      "points": [
+        [
+          411,
+          436
+        ],
+        [
+          469,
+          436
+        ],
+        [
+          529,
+          438
+        ]
+      ]
+    },
+    {
+      "units": [
+        "1"
+      ],
+      "unit": "Elyssia",
+      "points": [
+        [
+          687,
+          387
+        ],
+        [
+          672,
+          428
+        ],
+        [
+          665,
+          467
+        ],
+        [
+          757,
+          383
+        ],
+        [
+          755,
+          428
+        ],
+        [
+          747,
+          475
+        ]
+      ]
+    },
+    {
+      "units": [
+        "3"
+      ],
+      "unit": "Fishi",
+      "points": [
+        [
+          640,
+          556
+        ],
+        [
+          745,
+          556
+        ],
+        [
+          833,
+          546
+        ]
+      ]
+    }
+  ]
+}

@@ -9,12 +9,16 @@ units 1, 5 and 6 go on the ground loops, Phoenix (4) on the green patches.
                    {"units": ["4"], "zones": [...]}],
      "walk": {...}}            # optional, as in the Summer maps
 
-A unit that isn't in any set uses automatic spots. Maps without a General
+A set can give exact "points" ([[x, y], ...], screenshot pixels) instead of
+zones: that unit is placed on exactly those spots, in that order (e.g. the
+centres of circles drawn on a screenshot). A unit that isn't in any set uses
+automatic spots. Maps without a General
 file fall back to the Summer zones (maps/*.json).
 """
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -24,19 +28,50 @@ from ..maps import MAPS_DIR, MapZones, extract_avoid, extract_zones, load_maps, 
 from ..vision.ocr import OcrReader
 
 GENERAL_MAPS_DIR = MAPS_DIR / "general"
+RING_STEP = 0.05     # × height between the rings of "close by" spots around a point
 
 
 @dataclass
 class GeneralMap(MapZones):
     # unit key → (zones, avoid) for that unit
     unit_zones: dict[str, tuple[list, list]] = field(default_factory=dict)
+    # unit key → exact spots for that unit
+    unit_points: dict[str, list[tuple[float, float]]] = field(default_factory=dict)
 
     def for_unit(self, key: str) -> MapZones | None:
-        """This map with only `key`'s zones, or None (automatic spots)."""
+        """This map with only `key`'s zones (or exact points), or None (automatic spots)."""
+        if key in self.unit_points:
+            return PointZones(self.name, [], self.anchor, self.size, self.walk, [], self.titlebar,
+                              self.unit_points[key])
         if key not in self.unit_zones:
             return None
         zones, avoid = self.unit_zones[key]
-        return replace(self, zones=zones, avoid=avoid, unit_zones={})
+        return replace(self, zones=zones, avoid=avoid, unit_zones={}, unit_points={})
+
+
+@dataclass
+class PointZones(MapZones):
+    """Exact spots instead of areas: the live positions of `points`."""
+    points: list[tuple[float, float]] = field(default_factory=list)
+    # 0 = just the points; n = also n rings of spots around each (when the
+    # points themselves are taken or failed: "somewhere close").
+    ring: int = 0
+
+    def spots(self, lines, frame_w: int, frame_h: int, step_fraction: float = 0.045):
+        fit = self.transform(lines, frame_w, frame_h)
+        if fit is None:
+            return []
+        scale, dx, dy = fit
+        live = [(x * scale + dx, y * scale + dy) for x, y in self.points]
+        out = list(live)
+        for r in range(1, self.ring + 1):
+            radius, count = RING_STEP * frame_h * r, 6 * r
+            for x, y in live:
+                out += [(x + radius * math.cos(2 * math.pi * (i + 0.5 * r) / count),
+                         y + radius * math.sin(2 * math.pi * (i + 0.5 * r) / count))
+                        for i in range(count)]
+        return [(x, y) for x, y in out if 0.03 * frame_w < x < 0.86 * frame_w
+                and 0.10 * frame_h < y < 0.82 * frame_h]
 
 
 def _polygons(raw) -> list[list[tuple[int, int]]]:
@@ -48,9 +83,13 @@ def load_general_maps(dir: Path = GENERAL_MAPS_DIR) -> list[GeneralMap]:
     for path in sorted(dir.glob("*.json")):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            unit_zones = {}
+            unit_zones, unit_points = {}, {}
             every_zone, every_avoid = [], []
             for group in data["zone_sets"]:
+                if group.get("points"):
+                    for key in group["units"]:
+                        unit_points[str(key)] = [tuple(p) for p in group["points"]]
+                    continue
                 zones, avoid = _polygons(group["zones"]), _polygons(group.get("avoid"))
                 every_zone += zones
                 every_avoid += avoid
@@ -59,7 +98,7 @@ def load_general_maps(dir: Path = GENERAL_MAPS_DIR) -> list[GeneralMap]:
             maps.append(GeneralMap(data["name"], every_zone,
                                    tuple(data["anchor"]) if data.get("anchor") else None,
                                    tuple(data["size"]), data.get("walk"), every_avoid,
-                                   data.get("titlebar"), unit_zones))
+                                   data.get("titlebar"), unit_zones, unit_points))
         except (OSError, ValueError, KeyError, TypeError):
             continue
     return maps

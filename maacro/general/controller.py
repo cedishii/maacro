@@ -85,11 +85,15 @@ class GeneralThread(CardFirst, PlaceOnlyUnits, ScrollingUpgrades, MacroThread): 
         if not isinstance(self._map, GeneralMap) or not m.pending:
             super()._place_next(hwnd)
             return
-        whole, self._map = self._map, self._map.for_unit(m.pending[0])
+        whole, self._map = self._map, self._unit_zones(self._map, m.pending[0])
         try:
             super()._place_next(hwnd)
         finally:
             self._map = whole
+
+    def _unit_zones(self, whole: GeneralMap, key: str):
+        """The zones (or exact spots) to place unit `key` in; None = automatic."""
+        return whole.for_unit(key)
 
     # --- the player's screens: just wait ---------------------------------
     def _wait(self, text: str) -> None:
