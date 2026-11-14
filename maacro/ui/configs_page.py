@@ -94,7 +94,8 @@ class PlacementSpin(QSpinBox):
 class UnitCard(QFrame):
     """Settings for one hotbar slot."""
 
-    def __init__(self, key: str, path_option: bool, farm_option: bool = False, parent=None):
+    def __init__(self, key: str, path_option: bool, farm_option: bool = False, cap_option: bool = False,
+                 parent=None):
         super().__init__(parent)
         self.setObjectName("Card")
         self.key = key
@@ -132,6 +133,15 @@ class UnitCard(QFrame):
             self.farm.setToolTip("Farm units are upgraded to Max before any other unit "
                                  "(needs the name filled in).")
             grid.addWidget(self.farm, 5, 1)
+        self.cap = None
+        if cap_option:
+            grid.addWidget(QLabel("Upgrade up to", objectName="Muted"), 6, 0)
+            self.cap = QSpinBox()
+            self.cap.setRange(0, 12)
+            self.cap.setSpecialValueText("Max")
+            self.cap.setToolTip("Stop upgrading this unit after this many upgrades (the segments "
+                                "on its bar in the Unit Overview). Max = all the way.")
+            grid.addWidget(self.cap, 7, 0)
         self.enabled.toggled.connect(self._enable)
         self.upgrade.toggled.connect(lambda _: self._enable(self.enabled.isChecked()))
 
@@ -143,12 +153,12 @@ class UnitCard(QFrame):
         return spin
 
     def _enable(self, on: bool) -> None:
-        for widget in (self.placements, self.place_priority, self.upgrade, self.path, self.farm):
+        for widget in (self.placements, self.place_priority, self.upgrade, self.path, self.farm, self.cap):
             if widget is not None:
                 widget.setEnabled(on)
         self.upgrade_priority.setEnabled(on and self.upgrade.isChecked())
 
-    def set_values(self, values: dict, on_path: bool, farm: bool = False) -> None:
+    def set_values(self, values: dict, on_path: bool, farm: bool = False, cap: int = 0) -> None:
         self.enabled.setChecked(values["enabled"])
         self.name.setText(values["name"])
         self.placements.setValue(values["placements"])
@@ -159,6 +169,8 @@ class UnitCard(QFrame):
             self.path.setChecked(on_path)
         if self.farm is not None:
             self.farm.setChecked(farm)
+        if self.cap is not None:
+            self.cap.setValue(int(cap or 0))
         self._enable(values["enabled"])
 
     def values(self) -> dict:
@@ -177,6 +189,7 @@ class ModeSettings(QWidget):
         self.config_class = config_class
         self.ic = issubclass(config_class, InfinityConfig)
         self.farm = "farm_units" in getattr(config_class, "__dataclass_fields__", {})
+        self.caps = "upgrade_caps" in getattr(config_class, "__dataclass_fields__", {})
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 8, 0, 0)
         layout.setSpacing(10)
@@ -185,7 +198,7 @@ class ModeSettings(QWidget):
         grid.setSpacing(10)
         self.cards = {}
         for index, key in enumerate(VALID_KEYS):
-            card = UnitCard(key, path_option=self.ic, farm_option=self.farm)
+            card = UnitCard(key, path_option=self.ic, farm_option=self.farm, cap_option=self.caps)
             grid.addWidget(card, index // 2, index % 2)
             self.cards[key] = card
         layout.addLayout(grid)
@@ -213,8 +226,9 @@ class ModeSettings(QWidget):
     def show_config(self, config: MacroConfig) -> None:
         path = set(getattr(config, "path_units", []))
         farm = set(getattr(config, "farm_units", []))
+        caps = getattr(config, "upgrade_caps", {}) or {}
         for key, values in cards_from_config(config).items():
-            self.cards[key].set_values(values, key in path, key in farm)
+            self.cards[key].set_values(values, key in path, key in farm, caps.get(key, 0))
         for name, box in self.switches.items():
             box.setChecked(bool(getattr(config, name)))
 
@@ -230,6 +244,9 @@ class ModeSettings(QWidget):
         if self.ic:
             config.path_units = [k for k, card in self.cards.items()
                                  if card.path is not None and card.path.isChecked() and cards[k]["enabled"]]
+        if self.caps:
+            config.upgrade_caps = {k: card.cap.value() for k, card in self.cards.items()
+                                   if card.cap is not None and card.cap.value() > 0}
         if self.farm:
             config.farm_units = [k for k, card in self.cards.items()
                                  if card.farm is not None and card.farm.isChecked() and cards[k]["enabled"]]

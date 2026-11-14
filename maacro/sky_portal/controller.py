@@ -37,6 +37,8 @@ from ..general.maps import MAPS_DIR, PointZones, load_general_maps
 from ..upgrades import card_marks, overview_title
 from ..control import input as inp
 from ..vision.screens import fuzzy_in
+from ..placement import button_unit
+from ..upgrade_levels import upgrade_level
 from .align import spawn_shift
 from .config import SkyPortalConfig
 
@@ -65,7 +67,7 @@ class SkyPortalThread(FarmFirst, GeneralThread):
     def run(self) -> None:
         maps = load_general_maps(Path(SKY_MAPS_DIR))
         self._sky_map = maps[0] if maps else None
-        self._reference = cv2.imread(str(SKY_MAPS_DIR / "sky_portal_units.png"))
+        self._reference = cv2.imread(str(SKY_MAPS_DIR / "sky_portal_reference.png"))
         super().run()
 
     def _new_match(self) -> None:
@@ -83,7 +85,7 @@ class SkyPortalThread(FarmFirst, GeneralThread):
         return super()._cooldown(key, seconds)
 
     # --- following the spawn ---------------------------------------------------
-    def _spawn_offset(self, zones: PointZones) -> tuple[float, float]:
+    def _spawn_offset(self, zones) -> tuple[float, float]:
         """The spawn offset in screenshot pixels (measured once per match)."""
         if self._shift is None and self._align_tries < ALIGN_TRIES and self._reference is not None:
             self._align_tries += 1
@@ -111,9 +113,13 @@ class SkyPortalThread(FarmFirst, GeneralThread):
     # --- somewhere close ---------------------------------------------------
     def _unit_zones(self, whole, key: str):
         zones = super()._unit_zones(whole, key)
-        if not isinstance(zones, PointZones) or self.detector.latest is None:
+        if zones is None or self.detector.latest is None:
             return zones
         dx, dy = self._spawn_offset(zones)
+        if not isinstance(zones, PointZones):
+            # An area (Phoenix's balcony): move it, and its no-go marks, with the spawn.
+            move = lambda polygons: [[(x + dx, y + dy) for x, y in poly] for poly in polygons]
+            return replace(zones, zones=move(zones.zones), avoid=move(zones.avoid)) if dx or dy else zones
         if dx or dy:
             zones = replace(zones, points=[(x + dx, y + dy) for x, y in zones.points])
         frame_w, frame_h = self._frame_size()
@@ -129,6 +135,29 @@ class SkyPortalThread(FarmFirst, GeneralThread):
                                   f"close by (ring {ring}).", "Info")
                 return ringed
         return replace(zones, ring=MAX_RING)
+
+    # --- upgrade caps ---------------------------------------------------------
+    def _buttons_to_upgrade(self, lines, buttons):
+        """Leave out units already at their upgrade cap (e.g. Elyssia at 2)."""
+        kept = super()._buttons_to_upgrade(lines, buttons)
+        caps = {k: int(v) for k, v in (getattr(self.settings, "upgrade_caps", {}) or {}).items() if int(v) > 0}
+        if not caps or not kept:
+            return kept
+        _, frame = self.capture.latest_frame()
+        if frame is None:
+            return kept
+        names = self.settings.unit_names
+        out = []
+        for button in kept:
+            key = button_unit(button, lines, names)
+            level = upgrade_level(frame, button) if key in caps else None
+            if level is not None and level[0] >= caps[key]:
+                if self._cooldown(f"cap_log_{key}", 120):
+                    self.log.emit(f"{self._unit_label(key)} is at upgrade {level[0]}/{level[1]} "
+                                  f"(cap {caps[key]}) — not upgrading it further.", "Info")
+                continue
+            out.append(button)
+        return out
 
     # --- re-placing missing units -------------------------------------------
     def _on_unit_manager(self, hwnd: int) -> None:

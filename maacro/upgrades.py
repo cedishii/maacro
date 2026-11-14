@@ -131,6 +131,9 @@ class ScrollingUpgrades:
                     self._scroll_to_top(hwnd, title)             # at the bottom
                     return
             else:
+                if st.scrollable is not True:
+                    self.log.emit("The unit list scrolls — upgrading every part of it "
+                                  "(scrolling down, then back to the top).", "Info")
                 st.scrollable = True
                 st.steps += 1
                 st.most_steps = max(st.most_steps, st.steps)

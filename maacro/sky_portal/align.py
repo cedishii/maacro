@@ -14,13 +14,14 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-# Scenery patches in the reference picture (screenshot pixels, title bar included):
+# Scenery patches in sky_portal_reference.png (screenshot pixels, title bar
+# included), clear of the drawn circle, the unit spots and the players:
 # left, top, right, bottom.
 PATCHES = [
-    (300, 263, 560, 403),    # purple building wall and its fence (left)
-    (880, 203, 1080, 353),   # building on the right of the path
-    (150, 493, 420, 583),    # planks and fence, lower left
-    (560, 603, 740, 668),    # the path below the players
+    (900, 130, 1170, 290),   # the purple building right of the path
+    (370, 265, 640, 360),    # the left building's wall, under the balcony
+    (100, 455, 400, 535),    # planks and fence, lower left
+    (880, 300, 1120, 420),   # snow and lamp post right of the path
 ]
 SEARCH = 0.08       # × width: how far a patch is looked for around its place
 MIN_SCORE = 0.55    # match quality for a patch to count

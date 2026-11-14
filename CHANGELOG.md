@@ -3,6 +3,12 @@
 ## Unreleased
 
 **New**
+- **Sky Portal, new setup:** Bulby, 3 C.E.O., 2 Elyssia, 2 Fishi, then Phoenix ×Max on the
+  balcony (avoiding the marked spot); Water Goddess isn't placed. Farm units maxed first,
+  then Elyssia up to upgrade 2, Fishi up to 6, Phoenix up to 4 — read from the bar under
+  each card ("Upgrade up to" on the Sky Portal Configs tab). Spots are now on the zoomed-out
+  match view (the vote-start picture was more zoomed in). The log says when the unit list
+  scrolls.
 - **Sky Portal follows the spawn:** the view is lined up with the reference picture each
   match and every spot shifts with it. Zooms out during the vote; places 2.5× faster.
 - **Sky Portal setup:** Bulby (blue), 3 C.E.O. (green), 2 Elyssia (grey), 2 Fishi (red) on
