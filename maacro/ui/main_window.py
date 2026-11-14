@@ -11,18 +11,20 @@ from .. import __version__
 from ..capture import CaptureThread
 from ..detector import DetectorThread
 from ..stats import SessionStats
+from .actions_page import ActionsPage
 from .configs_page import ConfigsPage
 from .detection_page import DetectionPage
 from .main_page import MainPage
 from .modes_page import ModesPage
+from .recorder_page import RecorderPage
 from .settings_page import SettingsPage
 
 # (icon, label, when it gets built)
 PAGES = [
     ("▦", "Main", None),
     ("◈", "Modes", None),
-    ("☰", "Actions", "Step 4: what to click and when."),
-    ("◉", "Recorder", "Step 4: record unit placement."),
+    ("☰", "Actions", None),
+    ("◉", "Recorder", None),
     ("⚙", "Configs", None),
     ("⌕", "Detection", None),
     ("✦", "Settings", None),
@@ -71,12 +73,15 @@ class MainWindow(QMainWindow):
         self.capture = CaptureThread(fps=8, parent=self)
         self.detector = DetectorThread(self.capture, parent=self)
         self.main_page = MainPage(self.stats, self.capture, self.detector)
+        self.recorder_page = RecorderPage(self.capture, self.detector)
         built = {
             "Main": self.main_page,
             "Detection": DetectionPage(self.capture, self.detector),
             "Configs": ConfigsPage(),
             "Modes": ModesPage(self.main_page),
             "Settings": SettingsPage(self.main_page.notifier),
+            "Actions": ActionsPage(),
+            "Recorder": self.recorder_page,
         }
 
         group = QButtonGroup(self)
@@ -116,6 +121,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:
         self._closing = True
         self.main_page.shutdown()
+        self.recorder_page.shutdown()
         for thread in (self.detector, self.capture):
             thread.requestInterruption()
         for thread in (self.detector, self.capture):

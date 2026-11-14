@@ -20,6 +20,7 @@ from ..card_first import CardFirst
 from ..place_only import PlaceOnlyUnits
 from ..upgrades import ScrollingUpgrades
 from ..vision.screens import Detection
+from .actions import ActionRunner, actions_from_config
 from .config import GeneralConfig
 from .maps import GeneralMap, maps_for_general
 
@@ -38,10 +39,15 @@ class GeneralThread(CardFirst, PlaceOnlyUnits, ScrollingUpgrades, MacroThread): 
         self._in_game = False
         self._general_maps = []
         self._rezoomed = False
+        self._actions = ActionRunner([])
 
     def run(self) -> None:
         self._in_game = False
         self._general_maps = maps_for_general()
+        self._actions = ActionRunner(actions_from_config(getattr(self.settings, "actions", [])))
+        if self._actions.actions:
+            self.log.emit(f"{len(self._actions.actions)} action(s) on: "
+                          + "; ".join(a.describe() for a in self._actions.actions), "Info")
         self.log.emit("General mode — places units, upgrades them and waits. Start a match "
                       "yourself; MAACRO never clicks Play, Next, Replay or Return to lobby.", "Info")
         super().run()
@@ -126,6 +132,10 @@ class GeneralThread(CardFirst, PlaceOnlyUnits, ScrollingUpgrades, MacroThread): 
 
     # --- watchdog: only unstick things inside a match ----------------------
     def _watchdog(self, hwnd: int, screen: str) -> None:
+        # Your own actions (the Actions page) come first, on any screen they're for.
+        actions = getattr(self, "_actions", None)
+        if actions is not None and actions.step(self, hwnd, screen):
+            return
         if screen in GAME_SCREENS:
             self._in_game = True
         elif screen in PLAYER_SCREENS:

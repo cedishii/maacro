@@ -3,6 +3,13 @@
 ## Unreleased
 
 **New**
+- **Recorder page:** place your units by hand (unit key or card, then click) and MAACRO
+  records each spot; Save turns them into General mode zones for that map, per unit
+  (`maps/general/`). Units you didn't record keep their zones.
+- **Actions page:** your own rules for General mode — when a screen is up (lobby, vote
+  start, in a match, card vote, match over, after the match), click text on it or press a
+  key, once or every N seconds. E.g. auto Replay. Matchmaking/verification screens can't
+  be used.
 - **Place-only units:** each unit card on the Configs page has an "Upgrade" tick box.
   Untick it and the unit is still placed but never upgraded (it needs its name filled in).
   All modes.

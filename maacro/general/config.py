@@ -1,7 +1,7 @@
 """General mode settings, saved to general_config.json."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..config import MacroConfig
@@ -14,6 +14,8 @@ class GeneralConfig(MacroConfig):
     # Use the saved placement zones (and the walk some maps need to line
     # them up). Off: automatic spots, and the character never moves.
     use_map_zones: bool = True
+    # Your own "on this screen, click/press this" rules (the Actions page).
+    actions: list = field(default_factory=list)
 
     @classmethod
     def load(cls, path: Path = GENERAL_CONFIG_PATH) -> "GeneralConfig":
