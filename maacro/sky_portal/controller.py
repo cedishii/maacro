@@ -14,6 +14,9 @@ Smart placing:
 - when every spot of a unit is taken or has failed, rings of spots around
   them are tried ("somewhere close"), one ring further each time, before
   MacroThread's automatic spots;
+- the spots follow the spawn: the character doesn't always spawn on the
+  same spot, so the view is lined up with the reference picture once per
+  match (align.py) and every spot is shifted by the same amount;
 - the Unit Overview is counted: if it shows fewer of a unit than planned
   (sold, lost, or a placement that didn't really happen), that unit goes
   back on the to-place list and is placed again.
@@ -25,17 +28,23 @@ import time
 from dataclasses import replace
 from pathlib import Path
 
+import cv2
+
 from ..farm_first import FarmFirst
 from ..general.controller import GeneralThread
 from ..general.maps import MAPS_DIR, PointZones, load_general_maps
 from ..upgrades import card_marks, overview_title
+from ..control import input as inp
 from ..vision.screens import fuzzy_in
+from .align import spawn_shift
 from .config import SkyPortalConfig
 
 SKY_MAPS_DIR = MAPS_DIR / "sky_portal"
 MAX_RING = 3            # rings of "close by" spots around a unit's points
 MISSING_READS = 3       # reads in a row showing a unit missing before re-placing it
 REFILL_COOLDOWN = 30.0  # s between re-placing the same unit
+PLACE_SPEED = 0.4       # × MacroThread's pause between placements (others race for the spots)
+ALIGN_TRIES = 3         # line-up attempts per match before using the spots as drawn
 MAX_PLACEMENTS_GUARD = 10   # "Max" placements (configs_page.MAX_PLACEMENTS)
 
 
@@ -43,6 +52,11 @@ class SkyPortalThread(FarmFirst, GeneralThread):
     INTRO = ("Sky Portal (party member) — waits for the vote to finish, then places every unit, "
              "maxes the farm units, then the damage units. Never votes or clicks Play, Next, "
              "Replay or Return to lobby.")
+
+    _shift = None
+    _align_tries = 0
+    _reference = None
+    _vote_zoomed = False
 
     def __init__(self, capture, detector, settings: SkyPortalConfig | None = None, parent=None):
         super().__init__(capture, detector, settings or SkyPortalConfig(), parent)
@@ -52,6 +66,7 @@ class SkyPortalThread(FarmFirst, GeneralThread):
         self.settings.auto_vote_start = False
         maps = load_general_maps(Path(SKY_MAPS_DIR))
         self._sky_map = maps[0] if maps else None
+        self._reference = cv2.imread(str(SKY_MAPS_DIR / "sky_portal_units.png"))
         super().run()
 
     def _new_match(self) -> None:
@@ -59,12 +74,49 @@ class SkyPortalThread(FarmFirst, GeneralThread):
         self.match.nudged = True        # never walk forward for room
         self._missing_reads: dict[str, int] = {}
         self._refilled_at: dict[str, float] = {}
+        self._shift = None              # spawn offset in live pixels, once measured
+        self._align_tries = 0
+        self._vote_zoomed = False
+
+    def _cooldown(self, key: str, seconds: float) -> bool:
+        if key == "place":
+            seconds *= PLACE_SPEED
+        return super()._cooldown(key, seconds)
+
+    # --- following the spawn ---------------------------------------------------
+    def _spawn_offset(self, zones: PointZones) -> tuple[float, float]:
+        """The spawn offset in screenshot pixels (measured once per match)."""
+        if self._shift is None and self._align_tries < ALIGN_TRIES and self._reference is not None:
+            self._align_tries += 1
+            _, frame = self.capture.latest_frame()
+            found = spawn_shift(self._reference, zones.titlebar or 0, frame) if frame is not None else None
+            if found is not None:
+                self._shift = found[:2]
+                self.log.emit(f"Lined up with the Sky Portal picture: spawn offset "
+                              f"{found[0]:+.0f}, {found[1]:+.0f} px ({found[2]} landmarks).", "Info")
+            elif self._align_tries == 1 and getattr(self.settings, "zoom_out_seconds", 0) > 0:
+                # Probably not zoomed out (yet): zoom out and look again.
+                self.log.emit("Couldn't line up with the Sky Portal picture — zooming out again.", "Info")
+                inp.press(self.capture.hwnd, "o", hold=self.settings.zoom_out_seconds)
+                self._sleep(0.4)
+            elif self._align_tries >= ALIGN_TRIES:
+                self._shift = (0.0, 0.0)
+                self.log.emit("Couldn't line up with the Sky Portal picture — using the spots "
+                              "as drawn.", "Warn")
+        if not self._shift:
+            return 0.0, 0.0
+        frame_w, _ = self._frame_size()
+        scale = frame_w / zones.size[0]
+        return self._shift[0] / scale, self._shift[1] / scale
 
     # --- somewhere close ---------------------------------------------------
     def _unit_zones(self, whole, key: str):
         zones = super()._unit_zones(whole, key)
         if not isinstance(zones, PointZones) or self.detector.latest is None:
             return zones
+        dx, dy = self._spawn_offset(zones)
+        if dx or dy:
+            zones = replace(zones, points=[(x + dx, y + dy) for x, y in zones.points])
         frame_w, frame_h = self._frame_size()
         m, lines = self.match, self.detector.latest.lines
         gap = 0.04 * frame_h
@@ -137,7 +189,25 @@ class SkyPortalThread(FarmFirst, GeneralThread):
             self._map = sky
             self.log.emit("Sky Portal spots loaded.", "Info")
 
+    def _watchdog(self, hwnd: int, screen: str) -> None:
+        # Upgrading the damage units goes on for most of the match: a long
+        # time in the unit manager is normal here, not "stuck".
+        m, cfg = self.match, self.settings
+        if screen == "unit_manager" and cfg.upgrade_units and not m.upgrades_done and not m.pending:
+            self._screen_since = time.monotonic()
+        super()._watchdog(hwnd, screen)
+
     def _on_vote_start(self, hwnd: int) -> None:
+        # Zoom out now, so placing starts the moment the match does (the
+        # line-up check zooms out again if the camera was reset).
+        seconds = getattr(self.settings, "zoom_out_seconds", 0)
+        if not self._vote_zoomed and seconds > 0 and self.settings.place_units:
+            self._vote_zoomed = True
+            self._say("Vote start — zooming out (O) while waiting")
+            inp.press(hwnd, "o", hold=seconds)
+            self.match.zoomed = True        # don't zoom again when the match starts
+            self._rezoomed = True
+            return
         self._wait("vote start (the party votes, or the timer runs out)")
 
     def _on_lobby(self, hwnd: int) -> None:

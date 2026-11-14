@@ -222,6 +222,9 @@ def upgrade_order(lines: list[OcrLine], unit_names: dict[str, str],
     return sorted(buttons, key=rank)
 
 
+BUTTON_LABELS = ("first", "max", "last", "strongest", "weakest", "closest", "farthest")
+
+
 def button_unit(button: OcrLine, lines: list[OcrLine], unit_names: dict[str, str]) -> str | None:
     """The hotbar key of the unit an Upg button belongs to: the unit whose
     name sits nearest it, on its left (None if no named unit is read)."""
@@ -230,6 +233,9 @@ def button_unit(button: OcrLine, lines: list[OcrLine], unit_names: dict[str, str
     for line in lines:
         if line is button or line.x > button.x + 10:
             continue
+        label = _norm(line.text)
+        if label in BUTTON_LABELS or label.startswith("upg"):
+            continue    # the cards' buttons, not unit names ("Fishi" ≈ "First")
         for key, name in names.items():
             if fuzzy_in(name, line.text, 0.65):
                 dist = abs(line.y - button.y) + 0.5 * abs(line.x - button.x)

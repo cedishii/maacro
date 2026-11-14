@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..config import MacroConfig
 from ..general.config import GeneralConfig
 
 SKY_PORTAL_CONFIG_PATH = Path(__file__).resolve().parents[2] / "sky_portal_config.json"
@@ -23,7 +24,9 @@ class SkyPortalConfig(GeneralConfig):
 
     @classmethod
     def load(cls, path: Path = SKY_PORTAL_CONFIG_PATH) -> "SkyPortalConfig":
-        config = super().load.__func__(cls, path)   # defaults above if there's no file yet
+        # No file yet: the Sky Portal defaults above (not General's "copy the
+        # Summer units" first use — Summer has no Fishi).
+        config = MacroConfig.load.__func__(cls, path) if path.exists() else cls()
         config.auto_vote_start = False      # never votes: the party / the timer starts it
         return config
 

@@ -3,6 +3,8 @@
 ## Unreleased
 
 **New**
+- **Sky Portal follows the spawn:** the view is lined up with the reference picture each
+  match and every spot shifts with it. Zooms out during the vote; places 2.5× faster.
 - **Sky Portal setup:** Bulby (blue), 3 C.E.O. (green), 2 Elyssia (grey), 2 Fishi (red) on
   the exact spots drawn on `maps/sky_portal/sky_portal_units.png`; every unit is placed
   before any upgrade; farm units (Bulby, C.E.O.) are maxed first, then the damage units.
@@ -38,6 +40,11 @@
   (e.g. 3/3 for Phoenix).
 
 **Fixed**
+- Sky Portal didn't place Fishi: with no Sky Portal settings saved yet it copied the Summer
+  units (no Fishi) instead of using its own defaults.
+- Upg buttons were matched to a unit called "Fishi" (read as "First"): the cards' button
+  labels are no longer taken for unit names.
+- Sky Portal: long upgrading in the unit manager no longer counts as "stuck".
 - **Card picks behind the unit manager** (all modes): the 5-second peek watched only the
   first screen read after closing the manager, so a card pick that showed up a moment
   later was covered again and skipped (seen at wave 9). It now watches for 2.5 s, and a
