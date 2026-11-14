@@ -3,6 +3,8 @@
 ## Unreleased
 
 **New**
+- **Sky Portal, wave 10:** from wave 10 Phoenix/Marco is upgraded to at least upgrade 2
+  before anything else, even if the farm isn't maxed yet (against leaks).
 - **Sky Portal, new spot:** during Vote start it zooms out, votes Yes, then walks to the
   placing spot (Shift held: forward 4 s, left 3 s, forward 2 s — `walk_route` in its
   settings). Bulby on the green patch, 3 C.E.O. around it, 2 Elyssia on the path (up to

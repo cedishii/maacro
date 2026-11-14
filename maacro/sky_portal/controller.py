@@ -80,6 +80,7 @@ class SkyPortalThread(FarmFirst, GeneralThread):
         self._shift = None              # spawn offset in live pixels, once measured
         self._vote_seen = False
         self._route_walked = False
+        self._rush_logged = False
         self._align_tries = 0
         self._vote_zoomed = False
 
@@ -142,8 +143,35 @@ class SkyPortalThread(FarmFirst, GeneralThread):
 
     # --- upgrade caps ---------------------------------------------------------
     def _buttons_to_upgrade(self, lines, buttons):
+        """Farm first (FarmFirst), units at their cap left out, and from the
+        rush wave the rush unit (Phoenix) up to its minimum before anything."""
+        kept = self._capped_out(lines, super()._buttons_to_upgrade(lines, buttons))
+        rush = self._rush_buttons(lines, buttons)
+        return rush + [b for b in kept if b not in rush] if rush else kept
+
+    def _rush_buttons(self, lines, buttons):
+        cfg = self.settings
+        wave = getattr(getattr(self.detector, "tracker", None), "wave", None)
+        need, key = int(getattr(cfg, "rush_upgrades", 0) or 0), str(getattr(cfg, "rush_unit", ""))
+        if not need or not wave or wave < int(getattr(cfg, "rush_wave", 0) or 0) or not buttons:
+            return []
+        _, frame = self.capture.latest_frame()
+        names = cfg.unit_names
+        rush = []
+        for button in buttons:
+            if button_unit(button, lines, names) != key:
+                continue
+            level = upgrade_level(frame, button) if frame is not None else None
+            if level is None or level[0] < need:
+                rush.append(button)
+        if rush and not getattr(self, "_rush_logged", False):
+            self._rush_logged = True
+            self.log.emit(f"Wave {wave} — upgrading {self._unit_label(key)} to at least {need} "
+                          "before anything else (against leaks).", "Info")
+        return rush
+
+    def _capped_out(self, lines, kept):
         """Leave out units already at their upgrade cap (e.g. Elyssia at 2)."""
-        kept = super()._buttons_to_upgrade(lines, buttons)
         caps = {k: int(v) for k, v in (getattr(self.settings, "upgrade_caps", {}) or {}).items() if int(v) > 0}
         if not caps or not kept:
             return kept

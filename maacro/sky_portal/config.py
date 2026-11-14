@@ -23,6 +23,11 @@ class SkyPortalConfig(GeneralConfig):
     # Upgrade these units only up to this many upgrades (segments on their bar
     # in the Unit Overview); others go to Max.
     upgrade_caps: dict[str, int] = field(default_factory=lambda: {"1": 2})
+    # From wave `rush_wave`, the `rush_unit` (Phoenix) is upgraded to at least
+    # `rush_upgrades` even before the farm is done (against leaks). 0 = off.
+    rush_wave: int = 10
+    rush_unit: str = "4"
+    rush_upgrades: int = 2
     # Walk from the spawn to the placing spot during Vote start, holding Shift
     # (walk_sprint): [key, seconds] steps.
     walk_route: list = field(default_factory=lambda: [["w", 4.0], ["a", 3.0], ["w", 2.0]])
