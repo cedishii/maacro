@@ -40,7 +40,7 @@ ALERT_TRIES = 20        # then beep and ask the player to look
 ROOM_OVER_GRACE = 20    # s after a room ends with no loading/vote start: buttons unread → fixed spot
 
 
-class InfinityCastleThread(CardFirst, PlaceOnlyUnits, ScrollingUpgrades, MacroThread):   # ScrollingUpgrades: more than 6 units
+class InfinityCastleThread(CardFirst, PlaceOnlyUnits, ScrollingUpgrades, MacroThread):   # ScrollingUpgrades: more than 8 units
     ALLOW_LOBBY_PLAY = False        # never queue from the lobby
     ALLOW_RETURN_TO_LOBBY = False   # never leave the castle
     # Its own party-level decision (Party Member mode leaves it to the leader).

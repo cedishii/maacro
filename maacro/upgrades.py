@@ -1,8 +1,8 @@
-"""Upgrading more than 6 units: scrolling the Unit Overview.
+"""Upgrading every unit: scrolling the Unit Overview.
 
-The unit manager ("Unit Overview") shows about 6 units; the rest are further
+The unit manager ("Unit Overview") shows 8 units (4 rows of 2); the rest are further
 down its list, which scrolls with the mouse wheel. Summer's upgrade step only
-sees what's on screen, so a 7th unit and later never get upgraded.
+sees what's on screen, so a 9th unit and later never get upgraded.
 
 ScrollingUpgrades is a mixin for MacroThread subclasses (like
 PartyMemberBehavior, it goes first in the bases). The upgrading itself is
@@ -18,7 +18,7 @@ only moves the list:
 
 Whether the list moved is told from the "First" buttons (one per unit card):
 the same positions before and after a scroll = nothing more to see. A list
-that never moves (6 units or fewer) is left alone, and looked at again
+that never moves (8 units or fewer) is left alone, and looked at again
 every REPROBE seconds in case more units went down.
 
 The wheel is only used with the "Unit Overview" title read, on the cards
@@ -94,7 +94,7 @@ class ScrollState:
 
 
 class ScrollingUpgrades:
-    """Mixin: upgrade every unit in the Unit Overview, not just the first 6."""
+    """Mixin: upgrade every unit in the Unit Overview, not just the 8 on screen."""
 
     def _new_match(self) -> None:
         super()._new_match()

@@ -30,7 +30,7 @@ PLAYER_SCREENS = ("lobby", "join_matchmaking", "captcha", "match_found", "loadin
 GAME_SCREENS = ("vote_start", "in_match", "unit_manager", "card_pick")
 
 
-class GeneralThread(CardFirst, PlaceOnlyUnits, ScrollingUpgrades, MacroThread):   # ScrollingUpgrades: more than 6 units
+class GeneralThread(CardFirst, PlaceOnlyUnits, ScrollingUpgrades, MacroThread):   # ScrollingUpgrades: more than 8 units
     ALLOW_LOBBY_PLAY = False
     ALLOW_RETURN_TO_LOBBY = False
 
