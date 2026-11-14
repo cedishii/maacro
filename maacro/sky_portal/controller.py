@@ -1,6 +1,7 @@
 """Sky Portal, as a party member: someone else hosts the portal.
 
-    lobby / vote: wait (never votes — the party votes or the timer runs out)
+    lobby: wait → vote start: zoom out, vote Yes (everyone votes, not just
+    the leader)
     → zoom out → place EVERY unit on its spot (maps/sky_portal/) → max the
     farm units (Bulby, C.E.O.) → then upgrade the damage units as fast as
     money allows → wait for the next match.
@@ -49,9 +50,8 @@ MAX_PLACEMENTS_GUARD = 10   # "Max" placements (configs_page.MAX_PLACEMENTS)
 
 
 class SkyPortalThread(FarmFirst, GeneralThread):
-    INTRO = ("Sky Portal (party member) — waits for the vote to finish, then places every unit, "
-             "maxes the farm units, then the damage units. Never votes or clicks Play, Next, "
-             "Replay or Return to lobby.")
+    INTRO = ("Sky Portal (party member) — votes Yes, places every unit, maxes the farm units, "
+             "then the damage units. Never clicks Play, Next, Replay or Return to lobby.")
 
     _shift = None
     _align_tries = 0
@@ -63,7 +63,6 @@ class SkyPortalThread(FarmFirst, GeneralThread):
         self._sky_map = None
 
     def run(self) -> None:
-        self.settings.auto_vote_start = False
         maps = load_general_maps(Path(SKY_MAPS_DIR))
         self._sky_map = maps[0] if maps else None
         self._reference = cv2.imread(str(SKY_MAPS_DIR / "sky_portal_units.png"))
@@ -208,7 +207,7 @@ class SkyPortalThread(FarmFirst, GeneralThread):
             self.match.zoomed = True        # don't zoom again when the match starts
             self._rezoomed = True
             return
-        self._wait("vote start (the party votes, or the timer runs out)")
+        super()._on_vote_start(hwnd)        # votes Yes if switched on, else waits
 
     def _on_lobby(self, hwnd: int) -> None:
         self._wait("in the lobby (the party leader starts the portal)")

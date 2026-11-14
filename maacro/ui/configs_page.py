@@ -289,6 +289,7 @@ class ConfigsPage(QWidget):
             "place_units": "Place units",
             "upgrade_units": "Upgrade units to Max (unit manager, F)",
             "use_map_zones": "Use the Sky Portal spots (maps/sky_portal); off = automatic spots",
+            "auto_vote_start": "Vote Yes on 'Vote start'",
             "auto_card_pick": "Pick cards if a card vote shows up (off = wait)",
         }), "Sky Portal")
         layout.addWidget(tabs)

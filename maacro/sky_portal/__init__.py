@@ -1,1 +1,1 @@
-"""Sky Portal mode (party member): place, upgrade, wait; never votes."""
+"""Sky Portal mode (party member): vote Yes, place, upgrade, wait."""

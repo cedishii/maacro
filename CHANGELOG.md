@@ -10,8 +10,8 @@
   before any upgrade; farm units (Bulby, C.E.O.) are maxed first, then the damage units.
   Smart placing: spots taken → tries close by; a unit missing from the Unit Overview is
   placed again. "Farm unit" tick box on the Sky Portal Configs tab.
-- **Sky Portal mode (party member):** waits in the lobby and through the vote (never votes;
-  the match starts when the party votes or the timer ends), then zooms out, places and
+- **Sky Portal mode (party member):** waits in the lobby, votes Yes on Vote start (the
+  vote is everyone's; switch in its Configs tab), then zooms out, places and
   upgrades your units and waits. Never clicks Play, Next, Replay or Return to lobby. Own
   Configs tab; uses the General map zones (`maps/general/`, e.g. from the Recorder).
 - **Recorder page:** place your units by hand (unit key or card, then click) and MAACRO

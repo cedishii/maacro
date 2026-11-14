@@ -20,16 +20,13 @@ class SkyPortalConfig(GeneralConfig):
     # Farm units: maxed before any other unit is upgraded (farm_first.py).
     farm_units: list[str] = field(default_factory=lambda: ["6", "5"])
     auto_card_pick: bool = False
-    auto_vote_start: bool = False
+    auto_vote_start: bool = True        # the vote is everyone's, not the leader's
 
     @classmethod
     def load(cls, path: Path = SKY_PORTAL_CONFIG_PATH) -> "SkyPortalConfig":
         # No file yet: the Sky Portal defaults above (not General's "copy the
         # Summer units" first use — Summer has no Fishi).
-        config = MacroConfig.load.__func__(cls, path) if path.exists() else cls()
-        config.auto_vote_start = False      # never votes: the party / the timer starts it
-        return config
+        return MacroConfig.load.__func__(cls, path) if path.exists() else cls()
 
     def save(self, path: Path = SKY_PORTAL_CONFIG_PATH) -> None:
-        self.auto_vote_start = False
         super().save(path)
