@@ -34,17 +34,21 @@ def cards_from_config(config: MacroConfig) -> dict[str, dict]:
             "placements": min(MAX_PLACEMENTS, max(1, count)),
             "place_priority": first_seen.index(key) + 1 if key in first_seen else len(first_seen) + 1,
             "upgrade_priority": upgrades.index(key) + 1 if key in upgrades else len(upgrades) + 1,
+            # Placed but left out of the upgrade priority = place-only.
+            "upgrade": key in upgrades or count == 0,
         }
     return cards
 
 
 def config_lists(cards: dict[str, dict]) -> tuple[list[str], list[str]]:
     """(placement order, upgrade priority) from the cards. Lower priority
-    number goes first; ties keep key order. Disabled units are left out."""
+    number goes first; ties keep key order. Disabled units are left out, and
+    place-only units ("Upgrade" unticked) are left out of the upgrades."""
     enabled = [k for k in VALID_KEYS if cards[k]["enabled"]]
     by_place = sorted(enabled, key=lambda k: (cards[k]["place_priority"], k))
     order = [k for k in by_place for _ in range(cards[k]["placements"])]
-    upgrades = sorted(enabled, key=lambda k: (cards[k]["upgrade_priority"], k))
+    upgrades = sorted((k for k in enabled if cards[k].get("upgrade", True)),
+                      key=lambda k: (cards[k]["upgrade_priority"], k))
     return order, upgrades
 
 
@@ -109,7 +113,10 @@ class UnitCard(QFrame):
         self.place_priority = self._spin(1, 6, "1 = placed first.")
         grid.addWidget(self.placements, 3, 0)
         grid.addWidget(self.place_priority, 3, 1)
-        grid.addWidget(QLabel("Upgrade priority", objectName="Muted"), 4, 0)
+        self.upgrade = QCheckBox("Upgrade · priority")
+        self.upgrade.setToolTip("Untick to place this unit but never upgrade it "
+                                "(needs its name filled in).")
+        grid.addWidget(self.upgrade, 4, 0)
         self.upgrade_priority = self._spin(1, 6, "1 = upgraded first.")
         grid.addWidget(self.upgrade_priority, 5, 0)
         self.path = None
@@ -119,6 +126,7 @@ class UnitCard(QFrame):
                                  "other units are kept out of them.")
             grid.addWidget(self.path, 5, 1)
         self.enabled.toggled.connect(self._enable)
+        self.upgrade.toggled.connect(lambda _: self._enable(self.enabled.isChecked()))
 
     @staticmethod
     def _spin(low: int, high: int, tip: str) -> QSpinBox:
@@ -128,9 +136,10 @@ class UnitCard(QFrame):
         return spin
 
     def _enable(self, on: bool) -> None:
-        for widget in (self.placements, self.place_priority, self.upgrade_priority, self.path):
+        for widget in (self.placements, self.place_priority, self.upgrade, self.path):
             if widget is not None:
                 widget.setEnabled(on)
+        self.upgrade_priority.setEnabled(on and self.upgrade.isChecked())
 
     def set_values(self, values: dict, on_path: bool) -> None:
         self.enabled.setChecked(values["enabled"])
@@ -138,6 +147,7 @@ class UnitCard(QFrame):
         self.placements.setValue(values["placements"])
         self.place_priority.setValue(min(6, values["place_priority"]))
         self.upgrade_priority.setValue(min(6, values["upgrade_priority"]))
+        self.upgrade.setChecked(values.get("upgrade", True))
         if self.path is not None:
             self.path.setChecked(on_path)
         self._enable(values["enabled"])
@@ -146,7 +156,8 @@ class UnitCard(QFrame):
         return {"enabled": self.enabled.isChecked(), "name": self.name.text().strip(),
                 "placements": self.placements.value(),
                 "place_priority": self.place_priority.value(),
-                "upgrade_priority": self.upgrade_priority.value()}
+                "upgrade_priority": self.upgrade_priority.value(),
+                "upgrade": self.upgrade.isChecked()}
 
 
 class ModeSettings(QWidget):
@@ -215,8 +226,9 @@ class ModeSettings(QWidget):
         except OSError as exc:
             self._message(f"Couldn't save: {exc}", theme.LOSS)
             return
-        self._message(f"Saved. Placement order: {order_text(order)} · upgrades: {' '.join(upgrades)}",
-                      theme.WIN)
+        place_only = [k for k in dict.fromkeys(order) if k not in upgrades]
+        self._message(f"Saved. Placement order: {order_text(order)} · upgrades: {' '.join(upgrades) or 'none'}"
+                      + (f" · place only: {' '.join(place_only)}" if place_only else ""), theme.WIN)
 
     def _message(self, text: str, color: str) -> None:
         self.message.setStyleSheet(f"color: {color};")

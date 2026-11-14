@@ -82,5 +82,8 @@ class CardFirst:
         return True
 
 
-class SummerThread(CardFirst, MacroThread):
-    """Summer Event: MacroThread with card picks first."""
+from .place_only import PlaceOnlyUnits  # noqa: E402
+
+
+class SummerThread(CardFirst, PlaceOnlyUnits, MacroThread):
+    """Summer Event: MacroThread with card picks first and place-only units."""

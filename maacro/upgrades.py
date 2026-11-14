@@ -140,8 +140,9 @@ class ScrollingUpgrades:
                 return
             st.scrollable = None                    # more units may have gone down
         _, frame = self.capture.latest_frame()
-        has_work = (frame is not None and bool(find_green_buttons(frame))) or any(
-            _norm(l.text).startswith("upg") for l in det.lines)
+        buttons = (find_green_buttons(frame) if frame is not None else []) + [
+            l for l in det.lines if _norm(l.text).startswith("upg")]
+        has_work = bool(self._buttons_to_upgrade(det.lines, buttons))
         if has_work:
             st.empty_run = 0
         elif st.scrollable and st.empty_run >= max(3, st.most_steps + 2):
@@ -155,6 +156,10 @@ class ScrollingUpgrades:
         if not has_work:
             st.empty_run += 1                       # counted once per part of the list
         self._scroll_down(hwnd, title, det.lines)
+
+    def _buttons_to_upgrade(self, lines: list[OcrLine], buttons: list[OcrLine]) -> list[OcrLine]:
+        """The buttons that count as work (PlaceOnlyUnits leaves some out)."""
+        return buttons
 
     def _list_spot(self, title: OcrLine) -> tuple[float, float]:
         return title.center_x, title.y + title.h / 2 + LIST_DY * title.w

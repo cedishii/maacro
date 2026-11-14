@@ -3,6 +3,9 @@
 ## Unreleased
 
 **New**
+- **Place-only units:** each unit card on the Configs page has an "Upgrade" tick box.
+  Untick it and the unit is still placed but never upgraded (it needs its name filled in).
+  All modes.
 - **General mode:** places units, upgrades them and waits — for any match (story, raids,
   portals…). You start the match and handle everything after it; voting Yes and picking
   cards are optional switches.

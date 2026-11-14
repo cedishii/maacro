@@ -212,20 +212,27 @@ def upgrade_order(lines: list[OcrLine], unit_names: dict[str, str],
     """
     if buttons is None:
         buttons = [l for l in lines if _norm(l.text).startswith("upg")]
-    names = {key: name for key, name in unit_names.items() if name.strip()}
 
     def rank(button: OcrLine) -> int:
-        best_key, best_dist = None, float("inf")
-        for line in lines:
-            if line is button or line.x > button.x + 10:
-                continue
-            for key, name in names.items():
-                if fuzzy_in(name, line.text, 0.65):
-                    dist = abs(line.y - button.y) + 0.5 * abs(line.x - button.x)
-                    if dist < best_dist:
-                        best_key, best_dist = key, dist
-        if best_key in priority:
-            return priority.index(best_key)
+        key = button_unit(button, lines, unit_names)
+        if key in priority:
+            return priority.index(key)
         return len(priority)
 
     return sorted(buttons, key=rank)
+
+
+def button_unit(button: OcrLine, lines: list[OcrLine], unit_names: dict[str, str]) -> str | None:
+    """The hotbar key of the unit an Upg button belongs to: the unit whose
+    name sits nearest it, on its left (None if no named unit is read)."""
+    names = {key: name for key, name in unit_names.items() if name.strip()}
+    best_key, best_dist = None, float("inf")
+    for line in lines:
+        if line is button or line.x > button.x + 10:
+            continue
+        for key, name in names.items():
+            if fuzzy_in(name, line.text, 0.65):
+                dist = abs(line.y - button.y) + 0.5 * abs(line.x - button.x)
+                if dist < best_dist:
+                    best_key, best_dist = key, dist
+    return best_key
