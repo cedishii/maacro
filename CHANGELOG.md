@@ -3,6 +3,10 @@
 ## Unreleased
 
 **New**
+- **Sky Portal mode (party member):** waits in the lobby and through the vote (never votes;
+  the match starts when the party votes or the timer ends), then zooms out, places and
+  upgrades your units and waits. Never clicks Play, Next, Replay or Return to lobby. Own
+  Configs tab; uses the General map zones (`maps/general/`, e.g. from the Recorder).
 - **Recorder page:** place your units by hand (unit key or card, then click) and MAACRO
   records each spot; Save turns them into General mode zones for that map, per unit
   (`maps/general/`). Units you didn't record keep their zones.

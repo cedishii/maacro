@@ -20,6 +20,11 @@ DESCRIPTIONS = {
                 "zooms out, places your units, upgrades them to Max and waits. It never clicks "
                 "Play, Next, Replay or Return to lobby — you do. Voting Yes and picking cards "
                 "are off unless you switch them on in its Configs tab."),
+    "sky_portal": ("Join the party leader's Sky Portal. MAACRO waits in the lobby and through "
+                   "the vote — it never votes; the match starts when the party votes or the "
+                   "timer runs out — then zooms out, places your units, upgrades them and "
+                   "waits for the next match. Never clicks Play, Next, Replay or Return to "
+                   "lobby. Its units and switches are in the Sky Portal Configs tab."),
 }
 
 ROLE_DESCRIPTIONS = {

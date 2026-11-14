@@ -33,6 +33,8 @@ GAME_SCREENS = ("vote_start", "in_match", "unit_manager", "card_pick")
 class GeneralThread(CardFirst, PlaceOnlyUnits, ScrollingUpgrades, MacroThread):   # ScrollingUpgrades: more than 8 units
     ALLOW_LOBBY_PLAY = False
     ALLOW_RETURN_TO_LOBBY = False
+    INTRO = ("General mode — places units, upgrades them and waits. Start a match "
+             "yourself; MAACRO never clicks Play, Next, Replay or Return to lobby.")
 
     def __init__(self, capture, detector, settings: GeneralConfig | None = None, parent=None):
         super().__init__(capture, detector, settings or GeneralConfig(), parent)
@@ -48,8 +50,7 @@ class GeneralThread(CardFirst, PlaceOnlyUnits, ScrollingUpgrades, MacroThread): 
         if self._actions.actions:
             self.log.emit(f"{len(self._actions.actions)} action(s) on: "
                           + "; ".join(a.describe() for a in self._actions.actions), "Info")
-        self.log.emit("General mode — places units, upgrades them and waits. Start a match "
-                      "yourself; MAACRO never clicks Play, Next, Replay or Return to lobby.", "Info")
+        self.log.emit(self.INTRO, "Info")
         super().run()
 
     def _watch_map(self, det: Detection | None) -> None:

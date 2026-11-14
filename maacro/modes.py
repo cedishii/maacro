@@ -17,6 +17,8 @@ from .infinity_castle.config import InfinityConfig
 from .infinity_castle.controller import InfinityCastleThread
 from .macro import MacroThread
 from .party import BEHAVIORS, SOLO
+from .sky_portal.config import SkyPortalConfig
+from .sky_portal.controller import SkyPortalThread
 
 MODE_PATH = Path(__file__).resolve().parents[1] / "mode.json"
 
@@ -35,6 +37,9 @@ MODES = (
     Mode("infinity_castle", "Infinity Castle", InfinityCastleThread, InfinityConfig),
     # Already leaves every choice to the player, so the Party Member role adds nothing.
     Mode("general", "General (place, upgrade, wait)", GeneralThread, GeneralConfig,
+         supports_party=False),
+    # Always a party member: waits for the leader and the vote, then plays.
+    Mode("sky_portal", "Sky Portal (party member)", SkyPortalThread, SkyPortalConfig,
          supports_party=False),
 )
 BY_KEY = {mode.key: mode for mode in MODES}

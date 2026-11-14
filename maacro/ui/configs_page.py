@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 from ..config import VALID_KEYS, MacroConfig
 from ..general.config import GeneralConfig
 from ..infinity_castle.config import InfinityConfig
+from ..sky_portal.config import SkyPortalConfig
 from . import theme
 from .widgets import panel
 
@@ -271,4 +272,10 @@ class ConfigsPage(QWidget):
             "auto_vote_start": "Vote Yes on 'Vote start' (off = wait)",
             "auto_card_pick": "Pick cards if a card vote shows up (off = wait)",
         }), "General")
+        tabs.addTab(ModeSettings(SkyPortalConfig, {
+            "place_units": "Place units",
+            "upgrade_units": "Upgrade units to Max (unit manager, F)",
+            "use_map_zones": "Use saved map zones (maps/general, e.g. from the Recorder); off = automatic spots",
+            "auto_card_pick": "Pick cards if a card vote shows up (off = wait)",
+        }), "Sky Portal")
         layout.addWidget(tabs)

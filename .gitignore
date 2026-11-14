@@ -16,5 +16,6 @@ maps/*_source.png
 # Per-mode settings (local)
 ic_config.json
 general_config.json
+sky_portal_config.json
 mode.json
 webhook.json
