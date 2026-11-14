@@ -30,7 +30,7 @@ class SkyPortalConfig(GeneralConfig):
     rush_upgrades: int = 2
     # Walk from the spawn to the placing spot during Vote start, holding Shift
     # (walk_sprint): [key, seconds] steps.
-    walk_route: list = field(default_factory=lambda: [["w", 4.0], ["a", 3.0], ["w", 2.0]])
+    walk_route: list = field(default_factory=lambda: [["w", 2.5], ["a", 2.5], ["w", 1.5]])
     auto_card_pick: bool = False
     auto_vote_start: bool = True        # the vote is everyone's, not the leader's
 
