@@ -14,6 +14,9 @@ class InfinityConfig(MacroConfig):
     # Hotbar keys of damage units: they go in the circled path zones first;
     # every other unit is placed away from them (so the zones stay free).
     path_units: list[str] = field(default_factory=lambda: ["1"])
+    # Units placed only on the spots the game paints green when you pick them
+    # up (Phoenix): see green_spots.py.
+    green_units: list[str] = field(default_factory=lambda: ["4"])
     # Money comes fast here: place and upgrade at twice the Summer pace.
     fast_economy: bool = True
 

@@ -3,6 +3,9 @@
 ## Unreleased
 
 **New**
+- **Infinity Castle — green spots:** Phoenix (key 4) is placed only on the spots the game
+  paints green when you pick it up; with no green spot free, the other units go first and
+  Phoenix is tried again later (`green_units` in its settings).
 - **Sky Portal, wave 10:** from wave 10 Phoenix/Marco is upgraded to at least upgrade 2
   before anything else, even if the farm isn't maxed yet (against leaks).
 - **Sky Portal, new spot:** during Vote start it zooms out, votes Yes, then walks to the

@@ -21,6 +21,7 @@ from PySide6.QtCore import Signal
 from ..control import input as inp
 from ..macro import MacroThread
 from ..card_first import CardFirst
+from ..green_spots import GreenSpots
 from ..place_only import PlaceOnlyUnits
 from ..upgrades import ScrollingUpgrades
 from ..vision.screens import Detection, _norm, fuzzy_in
@@ -40,7 +41,7 @@ ALERT_TRIES = 20        # then beep and ask the player to look
 ROOM_OVER_GRACE = 20    # s after a room ends with no loading/vote start: buttons unread → fixed spot
 
 
-class InfinityCastleThread(CardFirst, PlaceOnlyUnits, ScrollingUpgrades, MacroThread):   # ScrollingUpgrades: more than 8 units
+class InfinityCastleThread(CardFirst, GreenSpots, PlaceOnlyUnits, ScrollingUpgrades, MacroThread):   # ScrollingUpgrades: more than 8 units
     ALLOW_LOBBY_PLAY = False        # never queue from the lobby
     ALLOW_RETURN_TO_LOBBY = False   # never leave the castle
     # Its own party-level decision (Party Member mode leaves it to the leader).
