@@ -56,6 +56,10 @@
   (e.g. 3/3 for Phoenix).
 
 **Fixed**
+- **Screen reading ~2× cheaper:** the fuzzy text matching (half the cost of every read: thousands
+  of difflib comparisons) skips comparisons that can't match and remembers answers — the same
+  answers as before (checked on 832,416 cases), 87 ms → ~27 ms per read, ~0.3 ms when the text
+  hasn't changed. Pictures are copied once instead of twice.
 - **Opens faster, lighter when idle:** the window shows before screen capture starts, and
   MAACRO only lowers its priority once it's open. With the macro stopped and no page showing
   the game, it takes one picture and does one screen read a second. The live view is only

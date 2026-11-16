@@ -127,13 +127,13 @@ def capture_window(hwnd: int, from_screen: bool = False) -> np.ndarray | None:
         header.biPlanes = 1
         header.biBitCount = 32
         header.biCompression = BI_RGB
-        buffer = ctypes.create_string_buffer(width * height * 4)
-        rows = _gdi32.GetDIBits(memory_dc, bitmap, 0, height, buffer,
+        # Straight into the array: one copy of the picture, not two.
+        frame = np.empty((height, width, 4), dtype=np.uint8)
+        rows = _gdi32.GetDIBits(memory_dc, bitmap, 0, height, frame.ctypes.data,
                                 ctypes.byref(header), DIB_RGB_COLORS)
         if rows != height:
             return None
-        # One copy (not two: .raw would make an extra one of ~8 MB per frame).
-        return np.frombuffer(buffer, dtype=np.uint8).reshape(height, width, 4).copy()
+        return frame
     finally:
         _gdi32.SelectObject(memory_dc, previous)
         _gdi32.DeleteObject(bitmap)
