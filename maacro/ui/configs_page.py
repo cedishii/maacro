@@ -307,10 +307,10 @@ class ConfigsPage(QWidget):
             "auto_card_pick": "Pick cards",
             "auto_vote_start": "Vote Yes on 'Vote start'",
         }, {"card_strategy": ("Card picks", [
-            ("easy", "Easy — green cards first; red only for + Secret Portal chance (and the "
+            ("easy", "Easy — green cards first; red only for + Secret Drop Rate (and the "
                      "Star Golem card during Starfall)"),
-            ("secret", "Secret Chances — red cards first, as much as possible (+ Secret Portal "
-                       "ones first, then the strongest)"),
+            ("hard", "Hard — red cards as much as possible (+ Secret Drop Rate ones first, then "
+                     "the most SummerPearls, the mildest danger among equals)"),
         ])}), "Summer Event")
         tabs.addTab(ModeSettings(InfinityConfig, {
             "place_units": "Place units",
