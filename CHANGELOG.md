@@ -3,6 +3,9 @@
 ## Unreleased
 
 **New**
+- **Light mode** (Settings → Performance), for slower PCs: 3 pictures and 2 screen reads a
+  second instead of 5 and 4; reacts a little slower. Measured: screen reading in a busy match
+  21% → 12% of a CPU core.
 - **Infinity Castle — green spots:** Phoenix (key 4) is placed only on the spots the game
   paints green when you pick it up; with no green spot free, the other units go first and
   Phoenix is tried again later (`green_units` in its settings).

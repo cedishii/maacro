@@ -61,6 +61,16 @@ class SettingsPage(QWidget):
         row.addStretch()
         box_layout.addLayout(row)
         layout.addWidget(box)
+
+        from ..modes import light_mode, save_light_mode
+        perf, perf_layout = panel("Performance")
+        self.light = QCheckBox("Light mode — for slower PCs: 3 pictures and 2 screen reads a second "
+                               "instead of 5 and 4 (MAACRO reacts a little slower)")
+        self.light.setChecked(light_mode())
+        self.light.toggled.connect(save_light_mode)
+        perf_layout.addWidget(self.light)
+        perf_layout.addWidget(QLabel("Applies right away. Off is fine on most PCs.", objectName="Muted"))
+        layout.addWidget(perf)
         layout.addStretch()
 
         self._result = _Result()

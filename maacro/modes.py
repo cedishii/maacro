@@ -78,3 +78,12 @@ def last_behavior() -> str:
 
 def save_behavior(key: str) -> None:
     _write(behavior=key)
+
+
+def light_mode() -> bool:
+    """Light mode (Settings): fewer pictures and screen reads, for slower PCs."""
+    return bool(_read().get("light_mode", False))
+
+
+def save_light_mode(on: bool) -> None:
+    _write(light_mode=bool(on))

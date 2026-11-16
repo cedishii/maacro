@@ -1,6 +1,8 @@
 """The MAACRO window: sidebar on the left, pages on the right."""
 from __future__ import annotations
 
+import time
+
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QButtonGroup, QHBoxLayout, QLabel, QMainWindow, QStackedWidget,
@@ -10,6 +12,7 @@ from PySide6.QtWidgets import (
 from .. import __version__
 from ..capture import CaptureThread
 from ..detector import DetectorThread
+from ..modes import light_mode
 from ..stats import SessionStats
 from .actions_page import ActionsPage
 from .configs_page import ConfigsPage
@@ -29,6 +32,10 @@ PAGES = [
     ("⌕", "Detection", None),
     ("✦", "Settings", None),
 ]
+
+
+NORMAL_CAPTURE_MS, LIGHT_CAPTURE_MS = 200, 333    # 5 or 3 pictures a second
+NORMAL_READ_MS, LIGHT_READ_MS = 250, 500          # 4 or 2 screen reads a second
 
 
 def lower_priority() -> None:
@@ -142,12 +149,22 @@ class MainWindow(QMainWindow):
         running = self.main_page.stats.running or any(t.isRunning() for t in self.main_page.macros.values())
         shows_game = visible and page in (self.main_page, self.recorder_page, self.detection_page)
         self.capture.idle = self.detector.idle = not (running or shows_game)
+        light = self._light_mode()
+        self.capture.interval_ms = LIGHT_CAPTURE_MS if light else NORMAL_CAPTURE_MS
+        self.detector.interval_ms = LIGHT_READ_MS if light else NORMAL_READ_MS
         # Everything placed and maxed, just watching the match: read less often.
         macro = self.main_page.macro
         m = getattr(macro, "match", None)
         self.detector.relaxed = bool(running and m is not None and m.upgrades_done and not m.pending
                                      and self.detector.tracker.screen == "in_match")
         self.capture.preview_wanted = visible and page in (self.main_page, self.recorder_page)
+
+    def _light_mode(self) -> bool:
+        """Settings → Light mode (read from mode.json at most every 2 s)."""
+        now = time.monotonic()
+        if now - getattr(self, "_light_read_at", -1e9) > 2:
+            self._light_read_at, self._light = now, light_mode()
+        return self._light
 
     def _restart_dead_threads(self) -> None:
         if self._closing:
