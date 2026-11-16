@@ -16,7 +16,7 @@ class DetectorThread(QThread):
     event = Signal(str, object)         # ("screen", "lobby"), ("result", "win"), ...
     failed = Signal(str)
 
-    def __init__(self, capture: CaptureThread, interval_ms: int = 150, parent=None):
+    def __init__(self, capture: CaptureThread, interval_ms: int = 250, parent=None):
         super().__init__(parent)
         self.capture = capture
         self.interval_ms = interval_ms
@@ -41,11 +41,10 @@ class DetectorThread(QThread):
                 self.failed.emit(f"Screen reading error: {exc}")
                 self.msleep(1000)
                 continue
-            # On a slow PC a read can take most of a second: rest at least half
-            # as long as it took, so screen reading never hogs a whole CPU core
-            # (the game needs it more). Fast PCs keep the usual pace.
+            # Rest at least as long as the read took: screen reading never
+            # uses more than half a CPU core (the game needs it more).
             took_ms = (time.perf_counter() - started) * 1000
-            self.msleep(int(max(self.interval_ms, 0.5 * took_ms)))
+            self.msleep(int(max(self.interval_ms, took_ms)))
 
     def _step(self, reader: OcrReader, last_id: int) -> int:
         """Read the newest frame if it's new. Returns its id."""

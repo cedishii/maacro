@@ -56,6 +56,11 @@
   (e.g. 3/3 for Phoenix).
 
 **Fixed**
+- **Lag / Roblox crashes:** lighter on the PC. While Roblox is in front its picture is copied
+  from the screen instead of PrintWindow (which made Windows render the game again for every
+  picture); 5 pictures a second instead of 8; screen reading at most half a CPU core (every
+  250 ms, resting as long as each read takes); MAACRO runs below normal priority so Roblox
+  gets the CPU first.
 - Sky Portal didn't place Fishi: with no Sky Portal settings saved yet it copied the Summer
   units (no Fishi) instead of using its own defaults.
 - Upg buttons were matched to a unit called "Fishi" (read as "First"): the cards' button

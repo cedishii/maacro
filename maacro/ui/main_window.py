@@ -31,6 +31,18 @@ PAGES = [
 ]
 
 
+def lower_priority() -> None:
+    """Run MAACRO below normal priority, so Roblox gets the CPU first."""
+    try:
+        import ctypes
+        kernel32 = ctypes.WinDLL("kernel32")
+        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+        kernel32.SetPriorityClass.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        kernel32.SetPriorityClass(kernel32.GetCurrentProcess(), 0x4000)   # BELOW_NORMAL
+    except (OSError, AttributeError):
+        pass
+
+
 def placeholder_page(title: str, note: str) -> QWidget:
     page = QWidget()
     layout = QVBoxLayout(page)
@@ -70,7 +82,8 @@ class MainWindow(QMainWindow):
         self.pages = QStackedWidget()
         root.addWidget(self.pages, 1)
 
-        self.capture = CaptureThread(fps=8, parent=self)
+        lower_priority()
+        self.capture = CaptureThread(fps=5, parent=self)
         self.detector = DetectorThread(self.capture, parent=self)
         self.main_page = MainPage(self.stats, self.capture, self.detector)
         self.recorder_page = RecorderPage(self.capture, self.detector)

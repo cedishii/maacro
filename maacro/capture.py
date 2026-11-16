@@ -1,7 +1,11 @@
 """Find the Roblox window and take pictures of it (Windows only).
 
-Uses PrintWindow, which can capture the game even when another window is
-on top of it. It cannot capture a minimized window.
+While Roblox is the window in front, its part of the screen is copied
+(BitBlt from the screen): cheap, it's what is already on screen. Otherwise
+PrintWindow is used, which can capture the game behind other windows but
+makes Windows render the game window again for every picture (heavy on a
+DirectX game: it was making Roblox stutter). Neither works on a minimized
+window.
 """
 from __future__ import annotations
 
@@ -34,6 +38,13 @@ _user32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
 _user32.ReleaseDC.restype = ctypes.c_int
 _user32.PrintWindow.argtypes = [wintypes.HWND, wintypes.HDC, wintypes.UINT]
 _user32.PrintWindow.restype = wintypes.BOOL
+_user32.GetForegroundWindow.restype = wintypes.HWND
+_user32.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
+_user32.ClientToScreen.restype = wintypes.BOOL
+_gdi32.BitBlt.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                          wintypes.HDC, ctypes.c_int, ctypes.c_int, wintypes.DWORD]
+_gdi32.BitBlt.restype = wintypes.BOOL
+SRCCOPY = 0x00CC0020
 
 _gdi32.CreateCompatibleDC.argtypes = [wintypes.HDC]
 _gdi32.CreateCompatibleDC.restype = wintypes.HDC
@@ -81,8 +92,9 @@ def find_roblox_window() -> int | None:
     return hwnd or None
 
 
-def capture_window(hwnd: int) -> np.ndarray | None:
-    """Picture of the inside of a window as a BGRA array (height, width, 4)."""
+def capture_window(hwnd: int, from_screen: bool = False) -> np.ndarray | None:
+    """Picture of the inside of a window as a BGRA array (height, width, 4).
+    from_screen: copy it from the screen (only right while it's in front)."""
     if not _user32.IsWindow(hwnd) or _user32.IsIconic(hwnd):
         return None
     rect = wintypes.RECT()
@@ -91,15 +103,22 @@ def capture_window(hwnd: int) -> np.ndarray | None:
     width, height = rect.right - rect.left, rect.bottom - rect.top
     if width <= 0 or height <= 0:
         return None
+    origin = wintypes.POINT(0, 0)
+    if from_screen and not _user32.ClientToScreen(hwnd, ctypes.byref(origin)):
+        return None
 
-    window_dc = _user32.GetDC(hwnd)
+    source = None if from_screen else hwnd      # None = the whole screen
+    window_dc = _user32.GetDC(source)
     if not window_dc:
         return None
     memory_dc = _gdi32.CreateCompatibleDC(window_dc)
     bitmap = _gdi32.CreateCompatibleBitmap(window_dc, width, height)
     previous = _gdi32.SelectObject(memory_dc, bitmap)
     try:
-        if not _user32.PrintWindow(hwnd, memory_dc, PW_CLIENTONLY | PW_RENDERFULLCONTENT):
+        if from_screen:
+            if not _gdi32.BitBlt(memory_dc, 0, 0, width, height, window_dc, origin.x, origin.y, SRCCOPY):
+                return None
+        elif not _user32.PrintWindow(hwnd, memory_dc, PW_CLIENTONLY | PW_RENDERFULLCONTENT):
             return None
         header = BITMAPINFOHEADER()
         header.biSize = ctypes.sizeof(BITMAPINFOHEADER)
@@ -119,7 +138,7 @@ def capture_window(hwnd: int) -> np.ndarray | None:
         _gdi32.SelectObject(memory_dc, previous)
         _gdi32.DeleteObject(bitmap)
         _gdi32.DeleteDC(memory_dc)
-        _user32.ReleaseDC(hwnd, window_dc)
+        _user32.ReleaseDC(source, window_dc)
 
 
 PREVIEW_EVERY = 0.25   # seconds between live-view pictures (4 a second)
@@ -141,6 +160,7 @@ class CaptureThread(QThread):
         self._frame_id = 0
         self._frame_time = 0.0
         self._preview_at = 0.0
+        self._screen_copy_ok = True     # False once a screen copy came back black
 
     def latest_frame(self) -> tuple[int, np.ndarray | None]:
         """The newest BGRA frame and a number that changes with every new frame."""
@@ -179,7 +199,14 @@ class CaptureThread(QThread):
             self._set_status("minimized")
         else:
             started = time.monotonic()
-            frame = capture_window(hwnd)
+            frame = None
+            if self._screen_copy_ok and _user32.GetForegroundWindow() == hwnd:
+                frame = capture_window(hwnd, from_screen=True)
+                if frame is not None and frame[::24, ::24, :3].max() < 8:
+                    self._screen_copy_ok = False    # black: this PC can't copy it that way
+                    frame = None
+            if frame is None:
+                frame = capture_window(hwnd)
             if frame is not None:
                 with self._lock:
                     self._frame = frame
