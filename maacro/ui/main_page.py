@@ -38,6 +38,7 @@ class MainPage(QWidget):
         super().__init__(parent)
         self.stats = stats
         self.capture = capture
+        self.detector = detector
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
