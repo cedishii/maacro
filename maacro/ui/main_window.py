@@ -142,6 +142,11 @@ class MainWindow(QMainWindow):
         running = self.main_page.stats.running or any(t.isRunning() for t in self.main_page.macros.values())
         shows_game = visible and page in (self.main_page, self.recorder_page, self.detection_page)
         self.capture.idle = self.detector.idle = not (running or shows_game)
+        # Everything placed and maxed, just watching the match: read less often.
+        macro = self.main_page.macro
+        m = getattr(macro, "match", None)
+        self.detector.relaxed = bool(running and m is not None and m.upgrades_done and not m.pending
+                                     and self.detector.tracker.screen == "in_match")
         self.capture.preview_wanted = visible and page in (self.main_page, self.recorder_page)
 
     def _restart_dead_threads(self) -> None:

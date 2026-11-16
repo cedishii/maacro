@@ -371,6 +371,10 @@ class MainPage(QWidget):
 
     def _on_macro_finished(self) -> None:
         self.action_value.setText("—")
+        reads, reused = getattr(self.detector, "reads", 0), getattr(self.detector, "reused", 0)
+        if reads + reused:
+            self.log_panel.log(f"Screen reading so far: {reads} reads, {reused} unchanged pictures "
+                               f"skipped ({100 * reused // (reads + reused)}% saved).")
         self.mode_box.setEnabled(not self.stats.running)
         self.behavior_box.setEnabled(not self.stats.running and BY_KEY[self.mode].supports_party)
         if self.stats.running:      # loop ended by itself (F3 sets running off first)

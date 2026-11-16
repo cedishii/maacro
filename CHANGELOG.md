@@ -56,6 +56,11 @@
   (e.g. 3/3 for Phoenix).
 
 **Fixed**
+- **Even less screen reading:** a picture that hasn't changed since the last read (menus, end
+  screens, waiting) reuses that read for up to 1 s instead of running text recognition again
+  (any real change — a banner, a number, a button — is read: checked region by region);
+  while the macro only watches the match (all placed and maxed), it reads every 0.6 s. The
+  log says how many reads were saved when the macro stops.
 - **Screen reading ~2× cheaper:** the fuzzy text matching (half the cost of every read: thousands
   of difflib comparisons) skips comparisons that can't match and remembers answers — the same
   answers as before (checked on 832,416 cases), 87 ms → ~27 ms per read, ~0.3 ms when the text
