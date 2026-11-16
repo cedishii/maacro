@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 from ..capture import CaptureThread
 from ..control import input as inp
 from ..detector import DetectorThread
+from ..summer_config import SummerConfig
 from ..modes import BY_KEY, MODES, last_behavior, last_mode, save_behavior, save_mode
 from ..party import BEHAVIORS, PARTY, SOLO, with_party
 from ..stats import SessionStats
@@ -143,6 +144,23 @@ class MainPage(QWidget):
             lambda _: self._set_behavior(self.behavior_box.currentData()))
         role_row.addWidget(self.behavior_box, 1)
         box_layout.addLayout(role_row)
+        # Summer Event only: how cards are picked (also on Configs → Summer Event).
+        self.cards_row = QWidget()
+        cards_layout = QHBoxLayout(self.cards_row)
+        cards_layout.setContentsMargins(0, 0, 0, 0)
+        cards_layout.addWidget(QLabel("Cards", objectName="Muted"))
+        self.cards_box = QComboBox()
+        self.cards_box.addItem("Easy — green first, red only for Secret Drop Rate", "easy")
+        self.cards_box.addItem("Hard — red cards as much as possible", "hard")
+        self.cards_box.setToolTip(
+            "Easy: green cards first; red only for + Secret Drop Rate (and the Star Golem card "
+            "during Starfall).\nHard: red cards first (+ Secret Drop Rate ones first, then the "
+            "most SummerPearls, the mildest danger among equals).\nApplies right away, even "
+            "while running.")
+        self.cards_box.setCurrentIndex(max(0, self.cards_box.findData(SummerConfig.load().card_strategy)))
+        self.cards_box.currentIndexChanged.connect(lambda _: self._set_card_strategy(self.cards_box.currentData()))
+        cards_layout.addWidget(self.cards_box, 1)
+        box_layout.addWidget(self.cards_row)
         status_row = QHBoxLayout()
         self.status_dot = QLabel("●")
         self.status_text = QLabel()
@@ -328,11 +346,29 @@ class MainPage(QWidget):
         if self.mode_box.currentIndex() != index:
             self.mode_box.setCurrentIndex(index)
         self.ic_box.setVisible(key == "infinity_castle")
+        if hasattr(self, "cards_row"):
+            self.cards_row.setVisible(key == "summer")
         self.log_panel.log(f"Mode: {BY_KEY[key].label}.")
         if hasattr(self, "behavior_box"):
             # A mode without party support just ignores the role (kept for the others).
             self.behavior_box.setEnabled(BY_KEY[key].supports_party and not self.stats.running)
         self.mode_changed.emit(key)
+
+    def _set_card_strategy(self, value: str) -> None:
+        """Save the Summer card-pick style; a running Summer macro uses it from
+        the next card pick."""
+        config = SummerConfig.load()
+        if config.card_strategy != value:
+            config.card_strategy = value
+            try:
+                config.save()
+            except OSError as exc:
+                self.log_panel.log(f"Couldn't save the card setting: {exc}", "Error")
+                return
+        summer = self.macros.get("summer")
+        if summer is not None and getattr(summer, "settings", None) is not None:
+            summer.settings.card_strategy = value
+        self.log_panel.log(f"Card picks: {'Hard' if value == 'hard' else 'Easy'}.")
 
     def _on_ic_progress(self, info: dict) -> None:
         self.ic_room_value.setText("—" if info.get("room") is None else str(info["room"]))

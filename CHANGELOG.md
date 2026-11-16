@@ -3,6 +3,8 @@
 ## Unreleased
 
 **New**
+- **Cards: Easy / Hard on the Main page** (under Mode and Role, when Summer Event is
+  selected). Saved at once; a running Summer macro uses it from the next card pick.
 - **Summer Event card picks: Easy / Hard** (Configs → Summer Event). Easy: green first; red
   only for + Secret Drop Rate (the mildest of those) and the Star Golem card during Starfall.
   Hard: red cards as much as possible (+ Secret Drop Rate ones first, then the most

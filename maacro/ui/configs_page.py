@@ -248,6 +248,17 @@ class ModeSettings(QWidget):
             current = getattr(config, name, None)
             (buttons.get(current) or next(iter(buttons.values()))).setChecked(True)
 
+    def showEvent(self, event) -> None:
+        # Pick-one settings can also change elsewhere (Cards on the Main page):
+        # show the saved choice. Unsaved unit-card edits are left alone.
+        super().showEvent(event)
+        if self.choices:
+            config = self.config_class.load()
+            for name, buttons in self.choices.items():
+                current = getattr(config, name, None)
+                if current in buttons:
+                    buttons[current].setChecked(True)
+
     def save(self) -> None:
         cards = {key: card.values() for key, card in self.cards.items()}
         order, upgrades = config_lists(cards)
