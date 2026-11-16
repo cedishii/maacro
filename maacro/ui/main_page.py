@@ -300,7 +300,9 @@ class MainPage(QWidget):
         if not (self.notifier.config.valid and self.notifier.config.on_drop):
             return
         path = None
-        image = getattr(self, "_last_image", None)
+        image = self.capture.latest_qimage()
+        if image is None:
+            image = getattr(self, "_last_image", None)
         if image is not None:
             path = Path(tempfile.gettempdir()) / f"maacro_drop_{time.time_ns()}.jpg"
             if not image.save(str(path), "JPG", 90):

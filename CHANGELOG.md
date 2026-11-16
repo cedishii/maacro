@@ -56,6 +56,10 @@
   (e.g. 3/3 for Phoenix).
 
 **Fixed**
+- **Opens faster, lighter when idle:** the window shows before screen capture starts, and
+  MAACRO only lowers its priority once it's open. With the macro stopped and no page showing
+  the game, it takes one picture and does one screen read a second. The live view is only
+  built while it's on screen (Discord drop posts use the newest picture instead).
 - **Lag / Roblox crashes:** lighter on the PC. While Roblox is in front its picture is copied
   from the screen instead of PrintWindow (which made Windows render the game again for every
   picture); 5 pictures a second instead of 8; screen reading at most half a CPU core (every

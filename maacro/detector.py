@@ -24,6 +24,7 @@ class DetectorThread(QThread):
         self.latest = None        # newest Detection (read by the macro thread)
         self.latest_count = 0     # goes up with every new Detection
         self.latest_time = 0.0    # when the frame behind `latest` was captured
+        self.idle = False         # macro stopped and no page needs it: read once a second
 
     def run(self) -> None:
         try:
@@ -44,7 +45,7 @@ class DetectorThread(QThread):
             # Rest at least as long as the read took: screen reading never
             # uses more than half a CPU core (the game needs it more).
             took_ms = (time.perf_counter() - started) * 1000
-            self.msleep(int(max(self.interval_ms, took_ms)))
+            self.msleep(int(max(1000 if self.idle else self.interval_ms, took_ms)))
 
     def _step(self, reader: OcrReader, last_id: int) -> int:
         """Read the newest frame if it's new. Returns its id."""

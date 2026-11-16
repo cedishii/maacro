@@ -142,6 +142,7 @@ def capture_window(hwnd: int, from_screen: bool = False) -> np.ndarray | None:
 
 
 PREVIEW_EVERY = 0.25   # seconds between live-view pictures (4 a second)
+IDLE_INTERVAL_MS = 1000  # one picture a second while nothing needs more (macro stopped)
 
 
 class CaptureThread(QThread):
@@ -161,6 +162,10 @@ class CaptureThread(QThread):
         self._frame_time = 0.0
         self._preview_at = 0.0
         self._screen_copy_ok = True     # False once a screen copy came back black
+        # Set by the window: build live-view pictures only while one is on
+        # screen, and slow right down while the macro isn't running.
+        self.preview_wanted = True
+        self.idle = False
 
     def latest_frame(self) -> tuple[int, np.ndarray | None]:
         """The newest BGRA frame and a number that changes with every new frame."""
@@ -171,6 +176,14 @@ class CaptureThread(QThread):
         """Like latest_frame, plus when it was captured (time.monotonic)."""
         with self._lock:
             return self._frame_id, self._frame, self._frame_time
+
+    def latest_qimage(self) -> QImage | None:
+        """The newest frame as a picture (e.g. for a Discord drop post)."""
+        _, frame = self.latest_frame()
+        if frame is None:
+            return None
+        height, width = frame.shape[:2]
+        return QImage(frame.data, width, height, width * 4, QImage.Format.Format_RGB32).copy()
 
     def _set_status(self, status: str) -> None:
         if status != self._status:
@@ -215,8 +228,8 @@ class CaptureThread(QThread):
                 self._set_status("found")
                 # The on-screen preview only needs a few pictures a second:
                 # building and drawing each one costs CPU the game could use.
-                if started - self._preview_at < PREVIEW_EVERY:
-                    self.msleep(self.interval_ms)
+                if not self.preview_wanted or started - self._preview_at < PREVIEW_EVERY:
+                    self.msleep(self._interval())
                     return hwnd
                 self._preview_at = started
                 height, width = frame.shape[:2]
@@ -224,5 +237,8 @@ class CaptureThread(QThread):
                 image = QImage(frame.data, width, height, width * 4,
                                QImage.Format.Format_RGB32).copy()
                 self.frame_ready.emit(image)
-        self.msleep(self.interval_ms if hwnd else 1000)
+        self.msleep(self._interval() if hwnd else 1000)
         return hwnd
+
+    def _interval(self) -> int:
+        return IDLE_INTERVAL_MS if self.idle else self.interval_ms

@@ -82,14 +82,14 @@ class MainWindow(QMainWindow):
         self.pages = QStackedWidget()
         root.addWidget(self.pages, 1)
 
-        lower_priority()
         self.capture = CaptureThread(fps=5, parent=self)
         self.detector = DetectorThread(self.capture, parent=self)
         self.main_page = MainPage(self.stats, self.capture, self.detector)
         self.recorder_page = RecorderPage(self.capture, self.detector)
+        self.detection_page = DetectionPage(self.capture, self.detector)
         built = {
             "Main": self.main_page,
-            "Detection": DetectionPage(self.capture, self.detector),
+            "Detection": self.detection_page,
             "Configs": ConfigsPage(),
             "Modes": ModesPage(self.main_page),
             "Settings": SettingsPage(self.main_page.notifier),
@@ -114,14 +114,35 @@ class MainWindow(QMainWindow):
                 button.setChecked(True)
         side.addStretch()
 
-        # Pages are connected; start watching the game.
-        self.capture.start()
-        self.detector.start()
+        # Show the window first, then start watching the game; lower MAACRO's
+        # priority once it's open (while starting it needs the CPU).
+        self._closing = False
+        QTimer.singleShot(200, self._start_watching)
+        QTimer.singleShot(5000, lower_priority)
+        self._load_timer = QTimer(self, interval=500, timeout=self._set_load)
+        self._load_timer.start()
         # Watchdog: if the capture or screen-reading thread ever ends by
         # itself, start it again (they're meant to run until MAACRO closes).
         self._closing = False
         self._thread_watch = QTimer(self, interval=5000, timeout=self._restart_dead_threads)
         self._thread_watch.start()
+
+    def _start_watching(self) -> None:
+        if not self._closing:
+            self._set_load()
+            self.capture.start()
+            self.detector.start()
+
+    def _set_load(self) -> None:
+        """Full speed only while it's needed: the macro running, or a page that
+        shows the game (Main, Detection, Recorder) on screen. Otherwise one
+        picture and one read a second."""
+        page = self.pages.currentWidget()
+        visible = self.isVisible() and not self.isMinimized()
+        running = self.main_page.stats.running or any(t.isRunning() for t in self.main_page.macros.values())
+        shows_game = visible and page in (self.main_page, self.recorder_page, self.detection_page)
+        self.capture.idle = self.detector.idle = not (running or shows_game)
+        self.capture.preview_wanted = visible and page in (self.main_page, self.recorder_page)
 
     def _restart_dead_threads(self) -> None:
         if self._closing:
