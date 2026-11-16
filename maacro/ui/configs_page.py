@@ -9,13 +9,14 @@ the macro already uses, so nothing about how a mode plays changes.
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
-    QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QScrollArea, QSpinBox, QTabWidget, QVBoxLayout, QWidget,
+    QButtonGroup, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+    QRadioButton, QScrollArea, QSpinBox, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from ..config import VALID_KEYS, MacroConfig
 from ..general.config import GeneralConfig
 from ..infinity_castle.config import InfinityConfig
+from ..summer_config import SummerConfig
 from ..sky_portal.config import SkyPortalConfig
 from . import theme
 from .widgets import panel
@@ -184,7 +185,8 @@ class UnitCard(QFrame):
 class ModeSettings(QWidget):
     """One mode's tab: unit cards and switches, saved to that mode's file."""
 
-    def __init__(self, config_class: type, switches: dict[str, str], parent=None):
+    def __init__(self, config_class: type, switches: dict[str, str],
+                 choices: dict[str, tuple[str, list[tuple[str, str]]]] | None = None, parent=None):
         super().__init__(parent)
         self.config_class = config_class
         self.ic = issubclass(config_class, InfinityConfig)
@@ -207,6 +209,17 @@ class ModeSettings(QWidget):
         self.switches = {name: QCheckBox(text) for name, text in switches.items()}
         for widget in self.switches.values():
             box_layout.addWidget(widget)
+        # Pick-one settings: {field: (title, [(value, label), ...])}
+        self.choices: dict[str, dict[str, QRadioButton]] = {}
+        for name, (title, options) in (choices or {}).items():
+            box_layout.addWidget(QLabel(title, objectName="Muted"))
+            group = QButtonGroup(self)
+            self.choices[name] = {}
+            for value, label in options:
+                button = QRadioButton(label)
+                group.addButton(button)
+                box_layout.addWidget(button)
+                self.choices[name][value] = button
         layout.addWidget(box)
 
         actions = QHBoxLayout()
@@ -231,6 +244,9 @@ class ModeSettings(QWidget):
             self.cards[key].set_values(values, key in path, key in farm, caps.get(key, 0))
         for name, box in self.switches.items():
             box.setChecked(bool(getattr(config, name)))
+        for name, buttons in self.choices.items():
+            current = getattr(config, name, None)
+            (buttons.get(current) or next(iter(buttons.values()))).setChecked(True)
 
     def save(self) -> None:
         cards = {key: card.values() for key, card in self.cards.items()}
@@ -252,6 +268,8 @@ class ModeSettings(QWidget):
                                  if card.farm is not None and card.farm.isChecked() and cards[k]["enabled"]]
         for name, box in self.switches.items():
             setattr(config, name, box.isChecked())
+        for name, buttons in self.choices.items():
+            setattr(config, name, next((v for v, b in buttons.items() if b.isChecked()), next(iter(buttons))))
         try:
             config.save()
         except OSError as exc:
@@ -283,12 +301,17 @@ class ConfigsPage(QWidget):
         layout.addWidget(QLabel("Each mode has its own settings. Changes apply the next time "
                                 "you press Start.", objectName="Muted"))
         tabs = QTabWidget()
-        tabs.addTab(ModeSettings(MacroConfig, {
+        tabs.addTab(ModeSettings(SummerConfig, {
             "place_units": "Place units",
             "upgrade_units": "Upgrade units to Max (unit manager, F)",
-            "auto_card_pick": "Pick cards (green first, else most votes)",
+            "auto_card_pick": "Pick cards",
             "auto_vote_start": "Vote Yes on 'Vote start'",
-        }), "Summer Event")
+        }, {"card_strategy": ("Card picks", [
+            ("easy", "Easy — green cards first; red only for + Secret Portal chance (and the "
+                     "Star Golem card during Starfall)"),
+            ("secret", "Secret Chances — red cards first, as much as possible (+ Secret Portal "
+                       "ones first, then the strongest)"),
+        ])}), "Summer Event")
         tabs.addTab(ModeSettings(InfinityConfig, {
             "place_units": "Place units",
             "upgrade_units": "Upgrade units to Max (unit manager, F)",

@@ -82,8 +82,10 @@ class CardFirst:
         return True
 
 
+from .card_strategy import CardStrategy  # noqa: E402
 from .place_only import PlaceOnlyUnits  # noqa: E402
 
 
-class SummerThread(CardFirst, PlaceOnlyUnits, MacroThread):
-    """Summer Event: MacroThread with card picks first and place-only units."""
+class SummerThread(CardStrategy, CardFirst, PlaceOnlyUnits, MacroThread):
+    """Summer Event: MacroThread with card picks first (Easy / Secret Chances)
+    and place-only units."""

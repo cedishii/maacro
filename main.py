@@ -95,15 +95,22 @@ def main() -> int:
 
 def starting_box():
     """A small "starting" box, up in a fraction of a second, while the rest
-    of MAACRO loads (Qt only: nothing heavy is imported for it)."""
+    of MAACRO loads (Qt only: nothing heavy is imported for it). The window
+    itself is see-through, so the box's rounded corners stay round."""
     from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QLabel
-    box = QLabel(f"MAACRO v{__version__}\nStarting…")
-    box.setWindowFlags(Qt.WindowType.SplashScreen | Qt.WindowType.FramelessWindowHint)
-    box.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+    box = QWidget()
+    box.setWindowFlags(Qt.WindowType.SplashScreen | Qt.WindowType.FramelessWindowHint
+                       | Qt.WindowType.NoDropShadowWindowHint)
+    box.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
     box.setFixedSize(280, 110)
-    box.setStyleSheet("background:#0f1117; color:#e6e6f0; font-size:15px; font-weight:600;"
-                      "border:1px solid #7c5cff; border-radius:10px;")
+    layout = QVBoxLayout(box)
+    layout.setContentsMargins(0, 0, 0, 0)
+    label = QLabel(f"MAACRO v{__version__}\nStarting…")
+    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    label.setStyleSheet("background:#0f1117; color:#e6e6f0; font-size:15px; font-weight:600;"
+                        "border:1px solid #7c5cff; border-radius:12px;")
+    layout.addWidget(label)
     box.show()
     QApplication.processEvents()
     return box

@@ -3,6 +3,10 @@
 ## Unreleased
 
 **New**
+- **Summer Event card picks: Easy / Secret Chances** (Configs → Summer Event). Easy: green
+  first; red only for + Secret Portal chance (and the Star Golem card during Starfall).
+  Secret Chances: red cards first (+ Secret Portal ones first, then the strongest; enemy
+  regen still last), then the Star Golem card, then green.
 - **Light mode** (Settings → Performance), for slower PCs: 3 pictures and 2 screen reads a
   second instead of 5 and 4; reacts a little slower. Measured: screen reading in a busy match
   21% → 12% of a CPU core.
@@ -59,6 +63,7 @@
   (e.g. 3/3 for Phoenix).
 
 **Fixed**
+- The "Starting…" box has properly rounded corners (the window around it is see-through).
 - **Opens smoothly:** a "Starting…" box is up in ~0.3 s while MAACRO loads (was 1.5 s of
   nothing); the full window shows at ~1.0 s (was ~1.5 s). The sidebar symbols cost Windows a
   ~350 ms font search on the first draw — the theme now names the font that has them.

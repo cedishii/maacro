@@ -63,6 +63,15 @@ QLineEdit, QComboBox, QSpinBox {{
 QSpinBox:disabled, QLineEdit:disabled {{ color: {MUTED}; }}
 #Card QCheckBox {{ background: transparent; }}
 
+/* Radio buttons (pick-one settings): a ring, filled with the accent when chosen */
+QRadioButton {{ background: transparent; spacing: 8px; }}
+QRadioButton::indicator {{
+    width: 12px; height: 12px; border-radius: 7px;
+    border: 1px solid {MUTED}; background: transparent;
+}}
+QRadioButton::indicator:checked {{ border: 1px solid {ACCENT}; background: {ACCENT}; }}
+QRadioButton::indicator:hover {{ border-color: {ACCENT}; }}
+
 /* Mode tabs */
 QTabWidget::pane {{ border: none; }}
 QTabBar::tab {{

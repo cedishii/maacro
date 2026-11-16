@@ -17,6 +17,7 @@ from .infinity_castle.config import InfinityConfig
 from .infinity_castle.controller import InfinityCastleThread
 from .macro import MacroThread
 from .party import BEHAVIORS, SOLO
+from .summer_config import SummerConfig
 from .sky_portal.config import SkyPortalConfig
 from .sky_portal.controller import SkyPortalThread
 
@@ -33,7 +34,7 @@ class Mode:
 
 
 MODES = (
-    Mode("summer", "Summer Event", SummerThread, MacroConfig),
+    Mode("summer", "Summer Event", SummerThread, SummerConfig),
     Mode("infinity_castle", "Infinity Castle", InfinityCastleThread, InfinityConfig),
     # Already leaves every choice to the player, so the Party Member role adds nothing.
     Mode("general", "General (place, upgrade, wait)", GeneralThread, GeneralConfig,
