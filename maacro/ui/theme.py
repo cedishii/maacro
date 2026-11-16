@@ -24,6 +24,9 @@ QToolTip {{ background: {CARD}; color: {TEXT}; border: 1px solid {BORDER}; }}
 #Sidebar {{ background: {PANEL}; border-right: 1px solid {BORDER}; }}
 #Brand {{ color: {ACCENT}; font-size: 10.5pt; font-weight: 800; padding: 14px 0 10px 0; }}
 #NavButton {{
+    /* The sidebar symbols are in Segoe UI Symbol: naming it saves Windows a
+       ~300 ms search through the fonts on the first draw. */
+    font-family: "Segoe UI Symbol";
     background: transparent; border: 1px solid transparent; border-radius: 8px;
     color: {MUTED}; padding: 8px 4px; font-size: 8.5pt;
 }}

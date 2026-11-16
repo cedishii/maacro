@@ -11,6 +11,7 @@ from .capture import CaptureThread
 from .game_state import GameTracker
 from .vision.ocr import OcrReader
 from .vision.screens import detect_screen
+from .vision import fast_text  # noqa: F401  (the fast fuzzy_in, same answers; see fast_text.py)
 
 
 THUMB = (96, 54)        # tiny copy of each frame, to tell if anything changed

@@ -11,9 +11,9 @@ from PySide6.QtWidgets import QApplication
 # so an installed copy always wins.
 sys.path.append(str(Path(__file__).resolve().parent / "maacro" / "_fallback"))
 
-from maacro import __version__
-from maacro.ui.main_window import MainWindow
-from maacro.ui.theme import STYLESHEET
+# The rest of MAACRO is loaded in main(), after the "starting" box is up:
+# loading it (numpy, OpenCV, text recognition…) is most of the start-up time.
+from maacro import __version__  # noqa: E402  (cheap: just the package)
 
 ICON = Path(__file__).resolve().parent / "maacro" / "assets" / "maacro.ico"
 
@@ -83,10 +83,30 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("MAACRO")
     app.setWindowIcon(QIcon(str(ICON)))
+    splash = starting_box()
+    from maacro.ui.main_window import MainWindow
+    from maacro.ui.theme import STYLESHEET
     app.setStyleSheet(STYLESHEET)
     window = MainWindow()
     window.show()
+    splash.close()
     return app.exec()
+
+
+def starting_box():
+    """A small "starting" box, up in a fraction of a second, while the rest
+    of MAACRO loads (Qt only: nothing heavy is imported for it)."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QLabel
+    box = QLabel(f"MAACRO v{__version__}\nStarting…")
+    box.setWindowFlags(Qt.WindowType.SplashScreen | Qt.WindowType.FramelessWindowHint)
+    box.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    box.setFixedSize(280, 110)
+    box.setStyleSheet("background:#0f1117; color:#e6e6f0; font-size:15px; font-weight:600;"
+                      "border:1px solid #7c5cff; border-radius:10px;")
+    box.show()
+    QApplication.processEvents()
+    return box
 
 
 if __name__ == "__main__":

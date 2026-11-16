@@ -59,6 +59,11 @@
   (e.g. 3/3 for Phoenix).
 
 **Fixed**
+- **Opens smoothly:** a "Starting…" box is up in ~0.3 s while MAACRO loads (was 1.5 s of
+  nothing); the full window shows at ~1.0 s (was ~1.5 s). The sidebar symbols cost Windows a
+  ~350 ms font search on the first draw — the theme now names the font that has them.
+  Only the Main page is built at launch; the others are built quietly right after, so every
+  first click is instant (Configs took ~150 ms the first time).
 - **Even less screen reading:** a picture that hasn't changed since the last read (menus, end
   screens, waiting) reuses that read for up to 1 s instead of running text recognition again
   (any real change — a banner, a number, a button — is read: checked region by region);

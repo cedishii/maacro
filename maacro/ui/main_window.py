@@ -22,6 +22,9 @@ from .modes_page import ModesPage
 from .recorder_page import RecorderPage
 from .settings_page import SettingsPage
 
+from ..vision import fast_text as _fast_text
+_fast_text.install()     # also in every module loaded by now
+
 # (icon, label, when it gets built)
 PAGES = [
     ("▦", "Main", None),
@@ -92,29 +95,36 @@ class MainWindow(QMainWindow):
         self.capture = CaptureThread(fps=5, parent=self)
         self.detector = DetectorThread(self.capture, parent=self)
         self.main_page = MainPage(self.stats, self.capture, self.detector)
-        self.recorder_page = RecorderPage(self.capture, self.detector)
-        self.detection_page = DetectionPage(self.capture, self.detector)
-        built = {
-            "Main": self.main_page,
-            "Detection": self.detection_page,
-            "Configs": ConfigsPage(),
-            "Modes": ModesPage(self.main_page),
-            "Settings": SettingsPage(self.main_page.notifier),
-            "Actions": ActionsPage(),
-            "Recorder": self.recorder_page,
+        # Only the Main page is built now; the others the first time they're
+        # opened (about 30 ms each), so the window shows sooner.
+        self.recorder_page = self.detection_page = None
+        self._factories = {
+            "Main": lambda: self.main_page,
+            "Detection": self._make_detection,
+            "Configs": ConfigsPage,
+            "Modes": lambda: ModesPage(self.main_page),
+            "Settings": lambda: SettingsPage(self.main_page.notifier),
+            "Actions": ActionsPage,
+            "Recorder": self._make_recorder,
         }
+        self._built: dict[int, QWidget] = {}
 
         group = QButtonGroup(self)
         group.setExclusive(True)
         for index, (icon, label, note) in enumerate(PAGES):
-            page = built[label] if note is None else placeholder_page(label, note)
-            self.pages.addWidget(page)
+            if note is not None:
+                self.pages.addWidget(placeholder_page(label, note))
+            elif index == 0:
+                self.pages.addWidget(self.main_page)
+                self._built[0] = self.main_page
+            else:
+                self.pages.addWidget(QWidget())     # stand-in until it's opened
             button = QToolButton(objectName="NavButton")
             button.setText(f"{icon}\n{label}")
             button.setCheckable(True)
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
             button.setFixedSize(68, 54)
-            button.clicked.connect(lambda _=False, i=index: self.pages.setCurrentIndex(i))
+            button.clicked.connect(lambda _=False, i=index: self.show_page(i))
             group.addButton(button)
             side.addWidget(button, alignment=Qt.AlignmentFlag.AlignHCenter)
             if index == 0:
@@ -126,6 +136,9 @@ class MainWindow(QMainWindow):
         self._closing = False
         QTimer.singleShot(200, self._start_watching)
         QTimer.singleShot(5000, lower_priority)
+        # The other pages are built quietly, one at a time, once the window is
+        # up, so the first click on any of them is instant too.
+        QTimer.singleShot(1500, self._build_next_page)
         self._load_timer = QTimer(self, interval=500, timeout=self._set_load)
         self._load_timer.start()
         # Watchdog: if the capture or screen-reading thread ever ends by
@@ -133,6 +146,38 @@ class MainWindow(QMainWindow):
         self._closing = False
         self._thread_watch = QTimer(self, interval=5000, timeout=self._restart_dead_threads)
         self._thread_watch.start()
+
+    def _build_next_page(self) -> None:
+        if self._closing:
+            return
+        for index, (_, _, note) in enumerate(PAGES):
+            if note is None and index not in self._built:
+                self._build_page(index)
+                QTimer.singleShot(200, self._build_next_page)
+                return
+
+    def show_page(self, index: int) -> None:
+        """Open a page (built now if it isn't yet)."""
+        self._build_page(index)
+        self.pages.setCurrentIndex(index)
+        self._set_load()
+
+    def _build_page(self, index: int) -> None:
+        if index not in self._built and PAGES[index][2] is None:
+            page = self._factories[PAGES[index][1]]()
+            stand_in = self.pages.widget(index)
+            self.pages.insertWidget(index, page)
+            self.pages.removeWidget(stand_in)
+            stand_in.deleteLater()
+            self._built[index] = page
+
+    def _make_detection(self) -> QWidget:
+        self.detection_page = DetectionPage(self.capture, self.detector)
+        return self.detection_page
+
+    def _make_recorder(self) -> QWidget:
+        self.recorder_page = RecorderPage(self.capture, self.detector)
+        return self.recorder_page
 
     def _start_watching(self) -> None:
         if not self._closing:
@@ -147,7 +192,8 @@ class MainWindow(QMainWindow):
         page = self.pages.currentWidget()
         visible = self.isVisible() and not self.isMinimized()
         running = self.main_page.stats.running or any(t.isRunning() for t in self.main_page.macros.values())
-        shows_game = visible and page in (self.main_page, self.recorder_page, self.detection_page)
+        shows_game = visible and page is not None and page in (self.main_page, self.recorder_page,
+                                                               self.detection_page)
         self.capture.idle = self.detector.idle = not (running or shows_game)
         light = self._light_mode()
         self.capture.interval_ms = LIGHT_CAPTURE_MS if light else NORMAL_CAPTURE_MS
@@ -157,7 +203,8 @@ class MainWindow(QMainWindow):
         m = getattr(macro, "match", None)
         self.detector.relaxed = bool(running and m is not None and m.upgrades_done and not m.pending
                                      and self.detector.tracker.screen == "in_match")
-        self.capture.preview_wanted = visible and page in (self.main_page, self.recorder_page)
+        self.capture.preview_wanted = visible and page is not None and page in (self.main_page,
+                                                                                self.recorder_page)
 
     def _light_mode(self) -> bool:
         """Settings → Light mode (read from mode.json at most every 2 s)."""
@@ -177,7 +224,8 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:
         self._closing = True
         self.main_page.shutdown()
-        self.recorder_page.shutdown()
+        if self.recorder_page is not None:
+            self.recorder_page.shutdown()
         for thread in (self.detector, self.capture):
             thread.requestInterruption()
         for thread in (self.detector, self.capture):
