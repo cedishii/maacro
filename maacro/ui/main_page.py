@@ -587,8 +587,11 @@ class MainPage(QWidget):
 
     def _maybe_report(self) -> None:
         """Settings → Discord: a status post every N minutes while running."""
-        minutes = self.notifier.config.report_minutes
-        if not (minutes and self.stats.running and self.notifier.config.valid):
+        notifier = getattr(self, "notifier", None)      # the clock ticks once before it exists
+        if notifier is None:
+            return
+        minutes = notifier.config.report_minutes
+        if not (minutes and self.stats.running and notifier.config.valid):
             return
         if time.monotonic() - getattr(self, "_reported_at", 0.0) < minutes * 60:
             return
