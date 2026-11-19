@@ -34,7 +34,7 @@ class AppSettings:
 
     # Roblox: where to (re)join, and when to do it by itself.
     server_link: str = ""                   # private server link; empty = a public server
-    rejoin: bool = False
+    rejoin: bool = True                     # only while the macro runs
     rejoin_closed_seconds: int = 60         # Roblox closed / crashed this long → open it again
     rejoin_disconnected_seconds: int = 120  # "Disconnected" box this long → restart Roblox
     rejoin_stuck_minutes: int = 0           # stuck on one screen this long → restart (0 = off)

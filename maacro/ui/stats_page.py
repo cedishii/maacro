@@ -114,6 +114,14 @@ class StatsPage(QWidget):
         row.addWidget(box, 2)
         layout.addLayout(row)
 
+        self.cards_box, box_layout = panel("By card style (Summer)")
+        box_layout.addWidget(QLabel(
+            "Which card style pays best: pearls per run count losses as 0. Recorded from now on — "
+            "older runs have no style.", objectName="Muted", wordWrap=True))
+        self.cards_table = _table(["Style", "Runs", "Win %", "Pearls / run", "Pearls / hour"], 150)
+        box_layout.addWidget(self.cards_table)
+        layout.addWidget(self.cards_box)
+
         box, box_layout = panel("Latest runs")
         self.recent_table = _table(["Map", "When", "Result", "Kind", "Mode", "Waves", "Time", "Pearls"], 320)
         box_layout.addWidget(self.recent_table)
@@ -172,6 +180,13 @@ class StatsPage(QWidget):
              _Item(hms(r.seconds), r.seconds or 0),
              _Item(f"{r.pearls:,}" if r.pearls else "—", r.pearls or 0)] for r in s.recent], sort=1)
         self._fill(self.day_table, [self._day_row(g) for g in s.by_day], sort=0)
+        self.cards_box.setVisible(bool(s.by_cards))
+        self._fill(self.cards_table, [
+            [_Item(g.name), _Item(str(g.runs), g.runs),
+             _Item(f"{g.win_rate:.0f}%", g.win_rate, _rate_color(g.win_rate)),
+             _Item(f"{g.pearls_per_run:,.0f}", g.pearls_per_run),
+             _Item(f"{g.pearls_per_hour:,.0f}" if g.seconds else "—", g.pearls_per_hour)]
+            for g in s.by_cards], sort=4)
 
     @staticmethod
     def _day_row(g: Group) -> list[QTableWidgetItem]:

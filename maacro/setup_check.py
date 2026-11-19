@@ -26,6 +26,7 @@ class Facts:
     recent_screens: list[str] = field(default_factory=list)   # last screen reads, oldest first
     mode_key: str = ""
     config: object = None
+    rejoin: bool | None = None      # Settings → Rejoin by itself (None = not known)
 
 
 def check(f: Facts) -> list[tuple[str, str]]:
@@ -62,6 +63,10 @@ def check(f: Facts) -> list[tuple[str, str]]:
                               "Roblox, or a very different UI scale, can do this)."))
         else:
             out.append((OK, "Screens are being recognised."))
+    if f.rejoin is False:
+        out.append((WARN, "Auto-rejoin is off (Settings → Roblox). When Reconnect doesn't work, "
+                          "MAACRO then sits on 'Disconnected' until you come back — it once took "
+                          "over an hour."))
     # --- the mode's unit setup ---------------------------------------------
     cfg = f.config
     if cfg is not None:

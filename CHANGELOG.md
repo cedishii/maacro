@@ -3,6 +3,15 @@
 ## Unreleased
 
 **New**
+- **Smart card picks** (Summer): Hard while winning; after a defeat, Easy for the next 2 runs,
+  then Hard again — one lost run (no pearls at all) costs more than a few Hard runs earn.
+- **Card style per run:** runs.csv records the style each run was played with, and the Stats
+  page compares them (*By card style*: win %, pearls per run with losses counted as 0, pearls
+  per hour).
+- Stats groups show pearls per run and per hour.
+- **Auto-rejoin is on by default** (still only while the macro runs). In the logs, two
+  disconnects where Reconnect never worked cost 46 and 68 minutes; rejoin restarts Roblox after
+  2 minutes. The setup check warns when it's off.
 - **Per-unit timing and upgrade limits, every mode** (Configs → unit cards): *Upgrade up to*
   (stop after N upgrades, read from the bar under the unit's card — was Sky Portal only),
   *From wave: place* (keep a unit back until that wave; the others go first, and upgrading

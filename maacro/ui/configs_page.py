@@ -488,8 +488,9 @@ class ConfigsPage(QWidget):
         }, {"card_strategy": ("Card picks", [
             ("easy", "Easy — green cards first; red only for + Secret Drop Rate (and the "
                      "Star Golem card during Starfall)"),
-            ("hard", "Hard — red cards as much as possible (+ Secret Drop Rate ones first, then "
-                     "the most SummerPearls, the mildest danger among equals)"),
+            ("hard", "Hard — red cards as much as possible (the highest + Secret Drop Rate first, "
+                     "then the most SummerPearls, the mildest danger among equals)"),
+            ("smart", "Smart — Hard while winning; after a defeat, Easy for the next 2 runs"),
         ])}, mode_key="summer"), "Summer Event")
         tabs.addTab(ModeSettings(InfinityConfig, {
             "place_units": "Place units",

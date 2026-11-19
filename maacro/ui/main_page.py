@@ -25,6 +25,7 @@ from ..control import input as inp
 from ..detector import DetectorThread
 from ..goals import goal_reached, goal_text
 from ..history import hms, load_runs, summarize
+from ..card_strategy import STRATEGIES
 from ..summer_config import SummerConfig
 from ..modes import BY_KEY, MODES, last_behavior, last_mode, save_behavior, save_mode
 from ..party import BEHAVIORS, PARTY, SOLO, with_party
@@ -181,11 +182,13 @@ class MainPage(QWidget):
         self.cards_box = QComboBox()
         self.cards_box.addItem("Easy — green first, red only for Secret Drop Rate", "easy")
         self.cards_box.addItem("Hard — red cards as much as possible", "hard")
+        self.cards_box.addItem("Smart — Hard, but Easy for 2 runs after a defeat", "smart")
         self.cards_box.setToolTip(
             "Easy: green cards first; red only for + Secret Drop Rate (and the Star Golem card "
-            "during Starfall).\nHard: red cards first (+ Secret Drop Rate ones first, then the "
-            "most SummerPearls, the mildest danger among equals).\nApplies right away, even "
-            "while running.")
+            "during Starfall).\nHard: red cards first (the highest + Secret Drop Rate first, then "
+            "the most SummerPearls, the mildest danger among equals).\nSmart: Hard, but Easy for "
+            "the 2 runs after a defeat.\nCompare them on the Stats page (By card style). Applies "
+            "right away, even while running.")
         self.cards_box.setCurrentIndex(max(0, self.cards_box.findData(SummerConfig.load().card_strategy)))
         self.cards_box.currentIndexChanged.connect(lambda _: self._set_card_strategy(self.cards_box.currentData()))
         cards_layout.addWidget(self.cards_box, 1)
@@ -417,7 +420,7 @@ class MainPage(QWidget):
         summer = self.macros.get("summer")
         if summer is not None and getattr(summer, "settings", None) is not None:
             summer.settings.card_strategy = value
-        self.log_panel.log(f"Card picks: {'Hard' if value == 'hard' else 'Easy'}.")
+        self.log_panel.log(f"Card picks: {STRATEGIES.get(value, 'Easy')}.")
 
     def _on_ic_progress(self, info: dict) -> None:
         self.ic_room_value.setText("—" if info.get("room") is None else str(info["room"]))
@@ -433,6 +436,7 @@ class MainPage(QWidget):
         self.macro.settings = BY_KEY[self.mode].config_class.load()
         self.macro.auto_profiles = AppSettings.load().auto_profiles
         runs_module.current_mode = self.mode_label()
+        runs_module.current_cards = ""
         if hasattr(self.macro, "set_behavior"):
             self.macro.set_behavior(self.behavior)
         self.app_settings = AppSettings.load()
@@ -594,7 +598,7 @@ class MainPage(QWidget):
         found, minimized, width, height = window_state(self.capture.hwnd)
         facts = setup_check.Facts(found, minimized, width, height, self._ocr_error(),
                                   list(self._recent_screens), self.mode,
-                                  BY_KEY[self.mode].config_class.load())
+                                  BY_KEY[self.mode].config_class.load(), self.app_settings.rejoin)
         results = setup_check.check(facts)
         text = setup_check.summary(results)
         color = (theme.LOSS if any(l == setup_check.ERROR for l, _ in results)

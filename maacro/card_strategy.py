@@ -11,6 +11,13 @@ equals (so +100% Enemy
 Speed isn't taken when +10 Enemy Shield pays the same); enemy-regen cards
 still last. Then the Star Golem card, then green, then blue/other.
 
+Smart: Hard while winning; after a defeat, Easy for the next SMART_EASY_RUNS
+runs (a lost run gives no pearls at all, so one loss costs more than the extra
+pearls of a few Hard runs), then Hard again.
+
+The style each run was played with is saved with the run (runs.csv "cards"),
+so the Stats page can compare Easy / Hard / Smart.
+
 vision/cards.py and macro.py aren't changed: macro.py's choose_card lookup is
 wrapped here and only changes while a CardStrategy thread picks a card.
 """
@@ -20,11 +27,13 @@ import re
 import threading
 
 from . import macro as _macro
+from . import runs as _runs
 from .vision import cards as _cards
 from .vision.cards import _mildness, _without_regen
 
-EASY, HARD = "easy", "hard"
-STRATEGIES = {EASY: "Easy", HARD: "Hard"}
+EASY, HARD, SMART = "easy", "hard", "smart"
+STRATEGIES = {EASY: "Easy", HARD: "Hard", SMART: "Smart"}
+SMART_EASY_RUNS = 2     # Easy runs after a defeat, in Smart
 SECRET = HARD           # the first name of Hard ("secret" in a saved config still means Hard)
 
 _local = threading.local()
@@ -118,10 +127,36 @@ choose_secret = choose_hard     # its first name
 
 class CardStrategy:
     """Mixin: card picks follow settings.card_strategy."""
+    _smart_easy_left = 0        # Smart: Easy runs still to play after a defeat
+
+    def effective_strategy(self) -> str:
+        """The style used for the next card pick (Smart → Easy or Hard)."""
+        strategy = getattr(self.settings, "card_strategy", EASY)
+        if strategy == "secret":
+            return HARD
+        if strategy == SMART:
+            return EASY if self._smart_easy_left > 0 else HARD
+        return strategy if strategy in STRATEGIES else EASY
 
     def _on_card_pick(self, hwnd: int) -> None:
-        _local.strategy = getattr(self.settings, "card_strategy", EASY)
+        _local.strategy = self.effective_strategy()
+        _runs.current_cards = ("smart-" if getattr(self.settings, "card_strategy", "") == SMART else "")             + _local.strategy
         try:
             super()._on_card_pick(hwnd)
         finally:
             _local.strategy = None
+
+    def _record_run(self, det) -> None:
+        was_recorded = self.match.recorded
+        super()._record_run(det)
+        if was_recorded or not self.match.recorded or det.result not in ("win", "loss"):
+            return
+        if getattr(self.settings, "card_strategy", "") != SMART:
+            return
+        if det.result == "loss":
+            self._smart_easy_left = SMART_EASY_RUNS
+            self.log.emit(f"Smart cards: defeat — Easy cards for the next {SMART_EASY_RUNS} runs.", "Info")
+        elif self._smart_easy_left > 0:
+            self._smart_easy_left -= 1
+            if self._smart_easy_left == 0:
+                self.log.emit("Smart cards: back to Hard.", "Info")

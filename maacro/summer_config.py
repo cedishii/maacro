@@ -10,7 +10,8 @@ from .config import MacroConfig
 @dataclass
 class SummerConfig(MacroConfig):
     # "easy": green cards first (red only for + Secret drop chance / Star
-    # Golem); "hard": red cards first. See card_strategy.py.
+    # Golem); "hard": red cards first; "smart": Hard, Easy for 2 runs after a
+    # defeat. See card_strategy.py.
     card_strategy: str = "easy"
     # Per unit (hotbar key → number; see unit_plan.py): upgrade only up to
     # this many upgrades, and don't place / upgrade before this wave.

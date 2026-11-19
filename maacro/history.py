@@ -112,6 +112,7 @@ class Run:
     seconds: int | None = None
     pearls: int | None = None
     raw_map: str = ""
+    cards: str = ""             # card style ("easy", "hard", "smart-easy"…); "" if not recorded
 
 
 def load_runs(path: Path = RUNS_CSV) -> list[Run]:
@@ -133,7 +134,7 @@ def load_runs(path: Path = RUNS_CSV) -> list[Run]:
                                 int(waves) if waves.isdigit() else None,
                                 _seconds(row.get("duration", "")),
                                 int(pearls) if pearls.isdigit() else None,
-                                row.get("map", "")))
+                                row.get("map", ""), (row.get("cards") or "").strip().lower()))
     except OSError:
         pass
     return runs
@@ -157,6 +158,16 @@ class Group:
         return self.wins / self.runs * 100 if self.runs else 0.0
 
     @property
+    def pearls_per_run(self) -> float:
+        """Pearls per run, losses (no pearls) included."""
+        return self.pearls / self.runs if self.runs else 0.0
+
+    @property
+    def pearls_per_hour(self) -> float:
+        played = sum(self.seconds)
+        return self.pearls / (played / 3600) if played else 0.0
+
+    @property
     def avg_seconds(self) -> int | None:
         return sum(self.seconds) // len(self.seconds) if self.seconds else None
 
@@ -178,6 +189,7 @@ class Summary:
     by_map: list[Group]
     by_kind: list[Group]
     by_day: list[Group]         # newest first
+    by_cards: list[Group]       # Summer card styles (runs that recorded one)
     best_win_streak: int
     current_streak: int         # +n wins / -n losses in a row, newest runs
     first: datetime | None
@@ -197,6 +209,7 @@ def summarize(runs: list[Run], today: date | None = None, recent: int = 50) -> S
     maps: dict[str, Group] = {}
     kinds: dict[str, Group] = {}
     days: dict[date, Group] = {}
+    cards: dict[str, Group] = {}
     best = streak = 0
     current = 0
     for run in sorted(runs, key=lambda r: r.time):
@@ -208,6 +221,9 @@ def summarize(runs: list[Run], today: date | None = None, recent: int = 50) -> S
         kinds.setdefault(kind, Group(kind)).add(run)
         day = run.time.date()
         days.setdefault(day, Group(day.isoformat())).add(run)
+        if run.cards:
+            label = card_label(run.cards)
+            cards.setdefault(label, Group(label)).add(run)
         if run.result == "win":
             streak += 1
             best = max(best, streak)
@@ -221,11 +237,19 @@ def summarize(runs: list[Run], today: date | None = None, recent: int = 50) -> S
         by_map=sorted(maps.values(), key=lambda g: (-g.runs, g.name)),
         by_kind=sorted(kinds.values(), key=lambda g: (-g.runs, g.name)),
         by_day=[days[d] for d in sorted(days, reverse=True)],
+        by_cards=sorted(cards.values(), key=lambda g: (-g.runs, g.name)),
         best_win_streak=best, current_streak=current,
         first=ordered[0].time if ordered else None,
         last=ordered[-1].time if ordered else None,
         recent=list(reversed(ordered[-recent:])),
     )
+
+
+def card_label(value: str) -> str:
+    """"smart-easy" → "Smart (Easy)", "hard" → "Hard"."""
+    if value.startswith("smart-"):
+        return f"Smart ({value[6:].title()})"
+    return value.title()
 
 
 def hms(seconds: int | None) -> str:

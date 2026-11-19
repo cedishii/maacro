@@ -22,7 +22,11 @@ RUNS_DIR = Path(__file__).resolve().parents[1] / "runs"
 # The running mode's name, set by the Main page on Start, saved with each run
 # (so macro.py, which records the runs, doesn't need to know about modes).
 current_mode = ""
-CSV_FIELDS = ["time", "result", "map", "waves", "duration", "pearls", "drops", "screenshot", "mode"]
+# The card style of the last card pick ("easy", "hard", "smart-easy"…), set by
+# card_strategy.py; "" when the mode doesn't pick cards that way.
+current_cards = ""
+CSV_FIELDS = ["time", "result", "map", "waves", "duration", "pearls", "drops", "screenshot", "mode",
+              "cards"]
 
 
 @dataclass
@@ -153,7 +157,7 @@ def save_run(record: RunRecord, frame: np.ndarray) -> Path:
                          "map": record.map_name, "waves": record.waves or "",
                          "duration": record.duration, "pearls": record.pearls or "",
                          "drops": record.drops, "screenshot": record.screenshot,
-                         "mode": record.mode or current_mode})
+                         "mode": record.mode or current_mode, "cards": current_cards})
     return path
 
 
