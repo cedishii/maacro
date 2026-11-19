@@ -3,6 +3,11 @@
 ## Unreleased
 
 **New**
+- **Unit names read off the hotbar:** a placed unit with no name (needed to find its Upg button
+  for upgrade priority, limits, farm units…) gets it from the name under its hotbar card at
+  the start of a match — several pictures vote, the base name is kept ("Elyssia (Abyssal)" →
+  "Elyssia") — and it's saved on the Configs page (not while a map profile is in use). Configs
+  also has a *Read names from the game* button.
 - **Smart card picks** (Summer): Hard while winning; after a defeat, Easy for the next 2 runs,
   then Hard again — one lost run (no pearls at all) costs more than a few Hard runs earn.
 - **Card style per run:** runs.csv records the style each run was played with, and the Stats

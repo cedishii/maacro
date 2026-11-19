@@ -106,7 +106,8 @@ def _config_checks(mode: str, cfg) -> list[tuple[str, str]]:
     for key in missing:
         out.append((WARN, f"Unit {key} has no name on the Configs page, so its "
                           f"{', '.join(dict.fromkeys(needs[key]))} can't be applied (the name is how its "
-                          "Upg button is found in the unit manager)."))
+                          "Upg button is found in the unit manager). MAACRO reads it off the hotbar in the next "
+                          "match, or press 'Read names from the game' on the Configs page."))
     unplaced = [str(k) for k in (getattr(cfg, "place_from_wave", {}) or {}) if str(k) not in placed]
     if unplaced:
         out.append((WARN, f"'Place from wave' is set for unit(s) {', '.join(sorted(unplaced))}, "

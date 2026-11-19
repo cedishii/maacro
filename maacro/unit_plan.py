@@ -23,9 +23,15 @@ with a wave set counts as "not yet".
 from __future__ import annotations
 
 import functools
+import time
+
+from PySide6.QtCore import Signal
 
 from .placement import button_unit
 from .upgrade_levels import upgrade_level
+from .vision.unit_names import read_slot_names, vote
+
+NAME_READS = 3          # pictures voted on when reading names off the hotbar
 
 
 def _wave_map(cfg, name: str) -> dict[str, int]:
@@ -49,11 +55,56 @@ def with_unit_plan(cls):
 
     class UnitPlanThread(cls):
         _unit_plan = True
+        # Names read off the hotbar for units that had none ({key: name}); only
+        # when no map profile is in use (the Main page saves them).
+        names_read = Signal(dict)
 
         def _new_match(self) -> None:
             super()._new_match()
             self._plan_wave = 0
             self._plan_logged: set[str] = set()
+            self._names_checked = False
+
+        # --- unit names from the hotbar -------------------------------------
+        def _on_in_match(self, hwnd: int) -> None:
+            if not getattr(self, "_names_checked", True):
+                self._names_checked = True
+                try:
+                    self._read_missing_names()
+                except Exception as exc:        # never let this stop the macro
+                    self.log.emit(f"Couldn't read unit names from the hotbar: {exc}", "Warn")
+            super()._on_in_match(hwnd)
+
+        def _read_missing_names(self) -> None:
+            cfg = self.settings
+            names = dict(getattr(cfg, "unit_names", {}) or {})
+            missing = [k for k in dict.fromkeys(cfg.placement_order) if not str(names.get(k, "")).strip()]
+            if not missing or getattr(self, "_ocr", None) is None:
+                return
+            readings, last = [], None
+            for _ in range(NAME_READS * 3):
+                frame_id, frame = self.capture.latest_frame()
+                if frame is not None and frame_id != last:
+                    last = frame_id
+                    readings.append(read_slot_names(frame, self._ocr))
+                    if len(readings) >= NAME_READS:
+                        break
+                time.sleep(0.25)
+            found = {k: n for k, n in vote(readings).items() if k in missing} if readings else {}
+            if not found:
+                self.log.emit(f"Unit(s) {', '.join(missing)} have no name and it couldn't be read off "
+                              "the hotbar — fill it in on the Configs page.", "Warn")
+                return
+            names.update(found)
+            cfg.unit_names = names
+            self.log.emit("Unit names read off the hotbar: "
+                          + ", ".join(f"{k} = {n}" for k, n in sorted(found.items())) + ".", "Info")
+            still = [k for k in missing if k not in found]
+            if still:
+                self.log.emit(f"Unit(s) {', '.join(still)} still have no name — fill it in on the "
+                              "Configs page.", "Warn")
+            if getattr(self, "_profile_name", None) is None:
+                self.names_read.emit(found)
 
         def _plan_current_wave(self) -> int:
             wave = getattr(getattr(self.detector, "tracker", None), "wave", None)

@@ -101,6 +101,7 @@ class MainPage(QWidget):
             thread_class = with_party(mode.thread_class) if mode.supports_party else mode.thread_class
             thread = with_auto_profile(with_unit_plan(thread_class))(capture, detector, parent=self)
             thread.profile_mode = mode.key      # profiles/<mode>/, picked by map
+            thread.names_read.connect(lambda found, key=mode.key: self._save_read_names(key, found))
             thread.status.connect(self.action_value.setText)
             thread.log.connect(self.log_panel.log)
             thread.finished.connect(self._on_macro_finished)
@@ -576,6 +577,22 @@ class MainPage(QWidget):
                 self._relaunching = False
         threading.Thread(target=work, daemon=True).start()
         return True
+
+    def _save_read_names(self, mode_key: str, found: dict) -> None:
+        """Keep names read off the hotbar in the mode's setup (empty ones only)."""
+        config = BY_KEY[mode_key].config_class.load()
+        names = dict(config.unit_names)
+        added = {k: n for k, n in found.items() if not str(names.get(k, "")).strip()}
+        if not added:
+            return
+        names.update(added)
+        config.unit_names = names
+        try:
+            config.save()
+        except OSError as exc:
+            self.log_panel.log(f"Couldn't save the unit names: {exc}", "Warn")
+            return
+        self.log_panel.log("Saved on the Configs page: " + ", ".join(f"unit {k} = {n}" for k, n in sorted(added.items())))
 
     # --- setup check -------------------------------------------------------
     def _sample_screen(self) -> None:

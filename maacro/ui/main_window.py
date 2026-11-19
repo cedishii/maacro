@@ -103,7 +103,7 @@ class MainWindow(QMainWindow):
         self._factories = {
             "Main": lambda: self.main_page,
             "Detection": self._make_detection,
-            "Configs": ConfigsPage,
+            "Configs": lambda: ConfigsPage(self.capture),
             "Modes": lambda: ModesPage(self.main_page),
             "Settings": lambda: SettingsPage(self.main_page.notifier, self.main_page.apply_app_settings),
             "Stats": StatsPage,

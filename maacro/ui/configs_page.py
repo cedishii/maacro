@@ -263,6 +263,11 @@ class ModeSettings(QWidget):
         reset.clicked.connect(lambda: self.show_config(self.config_class()))
         actions.addWidget(save)
         actions.addWidget(reset)
+        read_names = QPushButton("Read names from the game")
+        read_names.setToolTip("During a match, read each unit's name off the hotbar into the empty "
+                              "name boxes (check them, then Save).")
+        read_names.clicked.connect(self._read_names)
+        actions.addWidget(read_names)
         self.message = QLabel("")
         actions.addWidget(self.message)
         actions.addStretch()
@@ -271,6 +276,38 @@ class ModeSettings(QWidget):
             layout.addWidget(self._profiles_box())
         layout.addStretch()
         self.show_config(config_class.load())
+
+    # --- names off the hotbar ---------------------------------------------
+    capture = None          # set by ConfigsPage
+
+    def _read_names(self) -> None:
+        if self.capture is None:
+            return
+        _, frame = self.capture.latest_frame()
+        if frame is None:
+            self._message("No picture of Roblox yet — open it (not minimized), in a match.", theme.LOSS)
+            return
+        from ..vision.ocr import OcrReader
+        from ..vision.unit_names import read_slot_names
+        try:
+            found = read_slot_names(frame, OcrReader())
+        except Exception as exc:
+            self._message(f"Couldn't read the hotbar: {exc}", theme.LOSS)
+            return
+        if not found:
+            self._message("No names read — be in a match with the hotbar showing.", theme.LOSS)
+            return
+        filled = []
+        for key, name in sorted(found.items()):
+            card = self.cards.get(key)
+            if card is not None and not card.name.text().strip():
+                card.name.setText(name)
+                filled.append(f"{key} = {name}")
+        read = ", ".join(f"{k} = {n}" for k, n in sorted(found.items()))
+        if filled:
+            self._message(f"Filled {', '.join(filled)} (read: {read}). Check them and press Save.", theme.WIN)
+        else:
+            self._message(f"Read: {read}. Every name box already had a name — nothing changed.", theme.MUTED)
 
     # --- profiles and share codes ------------------------------------------
     def _profiles_box(self) -> QFrame:
@@ -464,8 +501,9 @@ class ModeSettings(QWidget):
 
 
 class ConfigsPage(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, capture=None, parent=None):
         super().__init__(parent)
+        ModeSettings.capture = capture
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         scroll = QScrollArea(widgetResizable=True)
