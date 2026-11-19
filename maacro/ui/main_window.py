@@ -21,6 +21,7 @@ from .main_page import MainPage
 from .modes_page import ModesPage
 from .recorder_page import RecorderPage
 from .settings_page import SettingsPage
+from .stats_page import StatsPage
 
 from ..vision import fast_text as _fast_text
 _fast_text.install()     # also in every module loaded by now
@@ -28,6 +29,7 @@ _fast_text.install()     # also in every module loaded by now
 # (icon, label, when it gets built)
 PAGES = [
     ("▦", "Main", None),
+    ("▤", "Stats", None),
     ("◈", "Modes", None),
     ("☰", "Actions", None),
     ("◉", "Recorder", None),
@@ -103,7 +105,8 @@ class MainWindow(QMainWindow):
             "Detection": self._make_detection,
             "Configs": ConfigsPage,
             "Modes": lambda: ModesPage(self.main_page),
-            "Settings": lambda: SettingsPage(self.main_page.notifier),
+            "Settings": lambda: SettingsPage(self.main_page.notifier, self.main_page.apply_app_settings),
+            "Stats": StatsPage,
             "Actions": ActionsPage,
             "Recorder": self._make_recorder,
         }

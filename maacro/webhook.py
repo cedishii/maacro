@@ -209,6 +209,38 @@ class Notifier:
                                 "color": AMBER, "footer": _footer(),
                                 "timestamp": datetime.now(timezone.utc).isoformat()}]})
 
+    def session_finished(self, reason: str, stats, mode_label: str, closed_roblox: bool = False) -> None:
+        """The summary when a session goal stops the macro (always pings)."""
+        if not self.config.valid:
+            return
+        ping = f"<@{self.config.mention.strip()}> " if self.config.mention.strip().isdigit() else ""
+        fields = [
+            {"name": "📊 Results", "value": f"✅ `{stats.wins}`  ❌ `{stats.losses}`  📈 `{stats.runs}` "
+                                           f"(`{stats.win_rate:.1f}%`)", "inline": False},
+            {"name": "⏱ Runtime", "value": f"`{_hms(stats.session_seconds)}`", "inline": True},
+        ]
+        if stats.pearls:
+            fields.append({"name": "🐚 Earned", "value": f"`{stats.pearls:,}`", "inline": True})
+        if stats.drops:
+            drops = sorted(stats.drops.items(), key=lambda kv: -kv[1])
+            fields.append({"name": "🎁 Drops", "value": "\n".join(f"• {k} ×{n}" for k, n in drops)[:1000],
+                           "inline": False})
+        description = f"Stopped: {reason}." + (" Roblox was closed." if closed_roblox else "")
+        self._send({"username": "MAACRO", "content": ping or None,
+                    "embeds": [{"title": "🏁 Session finished", "description": description,
+                                "color": BLUE, "fields": fields, "footer": _footer(mode_label),
+                                "timestamp": datetime.now(timezone.utc).isoformat()}]})
+
+    def rejoined(self, why: str, where: str) -> None:
+        """A note when MAACRO reopened Roblox by itself (sent with stuck alerts' setting)."""
+        if not (self.config.valid and self.config.on_stuck):
+            return
+        self._send({"username": "MAACRO",
+                    "embeds": [{"title": "🔄 Rejoining", "color": AMBER,
+                                "description": f"{why[:300]} — opening Roblox on {where}.",
+                                "footer": _footer(),
+                                "timestamp": datetime.now(timezone.utc).isoformat()}]})
+
     def test(self, url: str) -> str:
         """Send a test message right away (called from the Settings page).
         Returns "" on success, else the error."""

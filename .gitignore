@@ -19,3 +19,5 @@ general_config.json
 sky_portal_config.json
 mode.json
 webhook.json
+app_settings.json
+profiles/

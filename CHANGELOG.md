@@ -3,6 +3,57 @@
 ## Unreleased
 
 **New**
+- **Per-unit timing and upgrade limits, every mode** (Configs → unit cards): *Upgrade up to*
+  (stop after N upgrades, read from the bar under the unit's card — was Sky Portal only),
+  *From wave: place* (keep a unit back until that wave; the others go first, and upgrading
+  goes on meanwhile) and *From wave: upgrade* (money goes to the other units until then).
+  Saved in profiles and share codes too.
+- **Setup check** (Main page → Roblox → Check, and on every Start): Roblox open / minimized,
+  window size and shape, Windows text recognition, how many screen reads are recognised, and
+  unit settings that can't work (e.g. an upgrade limit on a unit with no name — the name is
+  how its Upg button is found). Problems go to the log.
+- **Summer Hard card picks take the highest Secret chance:** among red cards with Secret drop
+  chance, the one with the biggest "+N% Secret Drop Rate" wins (+100% over +50% over +25%),
+  even if another pays more SummerPearls; equal Secret chance → most pearls → mildest danger.
+  Misreads like "SO%" (50%) are understood; an unread amount counts as the lowest. The log
+  shows the others' amounts.
+- **Profiles by map:** name a profile after a map ("Shibuya District", or "Rain Village Summer
+  Hunt" for one stage kind) and its team and plan are used by themselves whenever a match on
+  that map starts — before anything is placed; other maps use the mode's own setup. Works in
+  every mode (Settings → Profiles by map, on by default).
+- **Discord remote control** (Settings): with a bot of your own, type `!status`, `!stats`,
+  `!ss` (screenshot), `!start`, `!stop`, `!rejoin` or `!help` in your channel — answered for
+  your user ID only. "Test connection" connects the bot once (Discord requires it before a new
+  bot may post) and posts a hello. No extra packages.
+- **Hold-key actions** (Actions page): hold a key for up to 30 s — a few in a row walk a route
+  (e.g. lobby → portal), then a "click text" action presses the button there.
+- **Any Stage mode** (was "General"): for story, legend stages, raids, challenges and portals.
+  New *After the match* choice on its Configs tab: leave it to you (as before), **Replay** the
+  stage, or **Next Stage** (Replay when there's no next one). It presses Next on the results
+  screen and then Replay / Next Stage — never Return to lobby or "Waiting for Players"; if the
+  button text can't be read 3 times, it presses Replay's usual spot.
+- **Stats page** (sidebar): every run in `runs/runs.csv` — all-time runs, win rate, today,
+  best win streak, runs per hour, average stage time, and tables per map, per stage kind
+  (Act, Summer Hunt, Infinity Mansion, Portal…), per day, and the latest 50 runs. Misread
+  map names ("Shibuya DistVi Act 6", "Rain MILage") are matched to the real map. The Main
+  page shows **All-time Runs** too.
+- **Session goals** (Settings): stop after N runs, after so many minutes, or after N losses
+  in a row; a Discord summary is posted (with a ping), and Roblox can be closed too.
+- **Auto-rejoin** (Settings → Roblox): paste a private server link (share link or
+  `privateServerLinkCode` link; empty = a public server). While the macro runs it opens
+  Roblox again when it's closed/crashed (60 s), restarts it when the Disconnected box stays
+  up (120 s), and optionally when stuck on one screen. At most 6 times an hour, 3 min apart.
+  "Open Roblox now" checks the link.
+- **Profiles and share codes** (Configs, every mode): save the setup under a name, load it
+  in one click, copy it as a `MAACRO1:` share code or import a friend's. Imported values are
+  checked (wrong types and unknown keys are ignored).
+- **Hotkeys** (Settings): pick the start and stop keys (F1–F12).
+- `runs.csv` now records the mode of each run (older files get the new column by themselves).
+
+**Changed**
+- Settings page reorganised into Session goals, Roblox, Hotkeys, Discord and Performance.
+- The SummerPearls row on the Main page only shows in Summer Event (or once pearls are earned).
+- Check boxes are drawn as clear rounded squares (unticked ones were hard to see).
 - **Cards: Easy / Hard on the Main page** (under Mode and Role, when Summer Event is
   selected). Saved at once; a running Summer macro uses it from the next card pick.
 - **Summer Event card picks: Easy / Hard** (Configs → Summer Event). Easy: green first; red

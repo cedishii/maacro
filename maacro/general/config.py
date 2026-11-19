@@ -16,6 +16,14 @@ class GeneralConfig(MacroConfig):
     use_map_zones: bool = True
     # Your own "on this screen, click/press this" rules (the Actions page).
     actions: list = field(default_factory=list)
+    # After a match: "none" = leave it to you, "replay" = press Replay/Retry,
+    # "next" = press Next Stage (Replay if there's no next stage).
+    after_match: str = "none"
+    # Per unit (hotbar key → number; see unit_plan.py): upgrade only up to
+    # this many upgrades, and don't place / upgrade before this wave.
+    upgrade_caps: dict[str, int] = field(default_factory=dict)
+    place_from_wave: dict[str, int] = field(default_factory=dict)
+    upgrade_from_wave: dict[str, int] = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: Path = GENERAL_CONFIG_PATH) -> "GeneralConfig":

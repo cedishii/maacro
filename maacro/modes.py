@@ -37,7 +37,7 @@ MODES = (
     Mode("summer", "Summer Event", SummerThread, SummerConfig),
     Mode("infinity_castle", "Infinity Castle", InfinityCastleThread, InfinityConfig),
     # Already leaves every choice to the player, so the Party Member role adds nothing.
-    Mode("general", "General (place, upgrade, wait)", GeneralThread, GeneralConfig,
+    Mode("general", "Any Stage (story, legend, raid, portal…)", GeneralThread, GeneralConfig,
          supports_party=False),
     # Always a party member: waits for the leader and the vote, then plays.
     Mode("sky_portal", "Sky Portal (party member)", SkyPortalThread, SkyPortalConfig,

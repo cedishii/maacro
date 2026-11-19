@@ -19,7 +19,10 @@ import numpy as np
 from .vision.ocr import OcrLine, OcrReader
 
 RUNS_DIR = Path(__file__).resolve().parents[1] / "runs"
-CSV_FIELDS = ["time", "result", "map", "waves", "duration", "pearls", "drops", "screenshot"]
+# The running mode's name, set by the Main page on Start, saved with each run
+# (so macro.py, which records the runs, doesn't need to know about modes).
+current_mode = ""
+CSV_FIELDS = ["time", "result", "map", "waves", "duration", "pearls", "drops", "screenshot", "mode"]
 
 
 @dataclass
@@ -31,6 +34,7 @@ class RunRecord:
     pearls: int | None = None   # SummerPearls earned
     drops: str = ""             # filled in once drops can be recognised
     screenshot: str = ""
+    mode: str = ""              # e.g. "Summer Event", "Any Stage"
 
 
 def _digits(text: str) -> str:
@@ -139,6 +143,7 @@ def save_run(record: RunRecord, frame: np.ndarray) -> Path:
     prune_files(RUNS_DIR, "*_*.png", KEEP_RUN_SHOTS)
     record.screenshot = shot.name
     path = RUNS_DIR / "runs.csv"
+    upgrade_csv(path)
     new = not path.exists()
     with open(path, "a", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=CSV_FIELDS)
@@ -147,5 +152,26 @@ def save_run(record: RunRecord, frame: np.ndarray) -> Path:
         writer.writerow({"time": f"{now:%Y-%m-%d %H:%M:%S}", "result": record.result,
                          "map": record.map_name, "waves": record.waves or "",
                          "duration": record.duration, "pearls": record.pearls or "",
-                         "drops": record.drops, "screenshot": record.screenshot})
+                         "drops": record.drops, "screenshot": record.screenshot,
+                         "mode": record.mode or current_mode})
     return path
+
+
+def upgrade_csv(path: Path) -> None:
+    """Rewrite a runs.csv made by an older version with today's columns (old
+    rows keep their values; new columns are left empty)."""
+    try:
+        with open(path, newline="", encoding="utf-8") as file:
+            reader = csv.DictReader(file)
+            if reader.fieldnames is None or list(reader.fieldnames) == CSV_FIELDS:
+                return
+            rows = list(reader)
+    except OSError:
+        return
+    temp = path.with_suffix(".csv.tmp")
+    with open(temp, "w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=CSV_FIELDS, extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({key: row.get(key) or "" for key in CSV_FIELDS})
+    temp.replace(path)

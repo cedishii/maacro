@@ -5,7 +5,8 @@ General never clicks Next, Replay, Return to lobby or Play by itself; an
 action lets you choose to, e.g. "Match over → click 'Replay' after 2 s".
 
 Each action: the screen it waits for, how long that screen has to be up
-first, then either a click on text read on screen or a key press. It runs
+first, then a click on text read on screen, a key press, or a key held down
+for a while (a few "hold" actions in a row walk a route, e.g. to a portal). It runs
 once each time the screen shows, or again every `repeat` seconds while it
 stays up. Matchmaking, verification and loading screens can't be used.
 """
@@ -25,7 +26,8 @@ ACTION_SCREENS = {
     "end": "Match over (results)",
     "after_end": "After the match",
 }
-KINDS = {"click": "Click text", "key": "Press key"}
+KINDS = {"click": "Click text", "key": "Press key", "hold": "Hold key (walk)"}
+MAX_HOLD = 30.0     # s: the longest a key can be held
 KEYS = tuple(inp.SCAN_CODES)
 
 
@@ -37,6 +39,7 @@ class Action:
     wait: float = 1.0           # s the screen must be up first
     repeat: float = 0.0         # s between repeats while the screen stays up (0 = once)
     enabled: bool = True
+    hold: float = 1.0           # s to hold the key ("hold" actions: walking routes)
 
     def problem(self) -> str:
         """Why this action can't run ('' if it can)."""
@@ -46,12 +49,16 @@ class Action:
             return "pick click or key"
         if not self.target.strip():
             return "the text to click is empty" if self.kind == "click" else "pick a key"
-        if self.kind == "key" and self.target not in KEYS:
+        if self.kind in ("key", "hold") and self.target not in KEYS:
             return f"'{self.target}' isn't a key MAACRO can press"
+        if self.kind == "hold" and not 0 < self.hold <= MAX_HOLD:
+            return f"hold between 0.1 and {MAX_HOLD:g} s"
         return ""
 
     def describe(self) -> str:
-        what = f"click '{self.target}'" if self.kind == "click" else f"press {self.target.upper()}"
+        what = (f"click '{self.target}'" if self.kind == "click"
+                else f"hold {self.target.upper()} for {self.hold:g} s" if self.kind == "hold"
+                else f"press {self.target.upper()}")
         again = f", again every {self.repeat:g} s" if self.repeat > 0 else ""
         return f"{ACTION_SCREENS.get(self.screen, self.screen)} → {what} after {self.wait:g} s{again}"
 
@@ -62,6 +69,7 @@ def actions_from_config(raw) -> list[Action]:
         try:
             action = Action(**{k: item[k] for k in asdict(Action()) if k in item})
             action.wait, action.repeat = float(action.wait), float(action.repeat)
+            action.hold = float(action.hold)
         except (TypeError, ValueError):
             continue
         actions.append(action)
@@ -86,9 +94,12 @@ class ActionRunner:
             done = self._done.get(index)
             if done is not None and done[0] == since and (action.repeat <= 0 or now - done[1] < action.repeat):
                 continue
-            if action.kind == "key":
+            if action.kind in ("key", "hold"):
                 thread.log.emit(f"Action: {action.describe()}", "Info")
-                inp.press(hwnd, action.target)
+                if action.kind == "hold":
+                    inp.press(hwnd, action.target, hold=action.hold)
+                else:
+                    inp.press(hwnd, action.target)
             else:
                 det = thread._fresh(screen)
                 line = thread._line(det, action.target) if det is not None else None

@@ -20,7 +20,7 @@ HOW_TO = (
     "saved for that camera view, so don't move the camera while recording.\n"
     "2. Press Record, then place your units as usual: press the unit's key (1–6) or click its "
     "card, then click where it goes. Each spot shows up below. Right click or Esc cancels.\n"
-    "3. Check the map name and press Save. General mode then places each recorded unit in "
+    "3. Check the map name and press Save. Any Stage mode then places each recorded unit in "
     "its spots on that map (\"Use saved map zones\" on). Units you didn't record keep their "
     "old zones, or get automatic spots."
 )
@@ -180,7 +180,7 @@ class RecorderPage(QWidget):
         lined_up = "" if self.recording.anchor else (
             " (the map title wasn't readable, so the spots are lined up from the window size)")
         self._say(f"Saved {len(self.recording.spots)} spot(s) for unit(s) {units} to "
-                  f"maps/general/{path.name}{lined_up}. Press Start again in General mode to use them.", theme.WIN)
+                  f"maps/general/{path.name}{lined_up}. Press Start again in Any Stage mode to use them.", theme.WIN)
 
     def _say(self, text: str, color: str) -> None:
         self.message.setStyleSheet(f"color: {color};")

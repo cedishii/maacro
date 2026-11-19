@@ -19,6 +19,11 @@ class InfinityConfig(MacroConfig):
     green_units: list[str] = field(default_factory=lambda: ["4"])
     # Money comes fast here: place and upgrade at twice the Summer pace.
     fast_economy: bool = True
+    # Per unit (hotbar key → number; see unit_plan.py): upgrade only up to
+    # this many upgrades, and don't place / upgrade before this wave.
+    upgrade_caps: dict[str, int] = field(default_factory=dict)
+    place_from_wave: dict[str, int] = field(default_factory=dict)
+    upgrade_from_wave: dict[str, int] = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: Path = IC_CONFIG_PATH) -> "InfinityConfig":

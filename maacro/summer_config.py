@@ -2,7 +2,7 @@
 config.py isn't changed; the extra field is saved in the same file."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .config import MacroConfig
 
@@ -12,6 +12,11 @@ class SummerConfig(MacroConfig):
     # "easy": green cards first (red only for + Secret drop chance / Star
     # Golem); "hard": red cards first. See card_strategy.py.
     card_strategy: str = "easy"
+    # Per unit (hotbar key → number; see unit_plan.py): upgrade only up to
+    # this many upgrades, and don't place / upgrade before this wave.
+    upgrade_caps: dict[str, int] = field(default_factory=dict)
+    place_from_wave: dict[str, int] = field(default_factory=dict)
+    upgrade_from_wave: dict[str, int] = field(default_factory=dict)
 
     @classmethod
     def load(cls, *args, **kwargs) -> "SummerConfig":

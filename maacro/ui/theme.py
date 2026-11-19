@@ -36,7 +36,7 @@ QToolTip {{ background: {CARD}; color: {TEXT}; border: 1px solid {BORDER}; }}
 /* Panels and cards */
 #Panel {{ background: {PANEL}; border: 1px solid {BORDER}; border-radius: 10px; }}
 #Card {{ background: {CARD}; border: 1px solid {BORDER}; border-radius: 8px; }}
-#Panel QLabel, #Card QLabel {{ background: transparent; }}
+#Panel QLabel, #Card QLabel, #Panel QCheckBox {{ background: transparent; }}
 #PanelTitle {{ font-size: 11pt; font-weight: 600; }}
 #PageTitle {{ font-size: 15pt; font-weight: 700; }}
 #Muted {{ color: {MUTED}; }}
@@ -72,6 +72,17 @@ QRadioButton::indicator {{
 QRadioButton::indicator:checked {{ border: 1px solid {ACCENT}; background: {ACCENT}; }}
 QRadioButton::indicator:hover {{ border-color: {ACCENT}; }}
 
+/* Check boxes: a rounded square, filled with the accent when ticked */
+QCheckBox {{ spacing: 8px; }}
+QCheckBox::indicator {{
+    width: 13px; height: 13px; border-radius: 3px;
+    border: 1px solid {MUTED}; background: transparent;
+}}
+QCheckBox::indicator:checked {{ border: 1px solid {ACCENT}; background: {ACCENT}; }}
+QCheckBox::indicator:hover {{ border-color: {ACCENT}; }}
+QCheckBox::indicator:disabled {{ border-color: {BORDER}; }}
+QCheckBox::indicator:checked:disabled {{ background: {BORDER}; }}
+
 /* Mode tabs */
 QTabWidget::pane {{ border: none; }}
 QTabBar::tab {{
@@ -85,6 +96,19 @@ QPlainTextEdit {{
     background: {CARD}; border: 1px solid {BORDER}; border-radius: 6px;
     font-family: "Consolas"; font-size: 9pt;
 }}
+/* Tables (Stats page) */
+QTableWidget {{
+    background: {CARD}; border: 1px solid {BORDER}; border-radius: 6px;
+    gridline-color: {BORDER}; alternate-background-color: {PANEL};
+}}
+QHeaderView::section {{
+    background: {PANEL}; color: {MUTED}; border: none; border-bottom: 1px solid {BORDER};
+    padding: 4px 8px; font-weight: 600;
+}}
+QTableCornerButton::section {{ background: {PANEL}; border: none; }}
+#StatValue {{ font-size: 16pt; font-weight: 700; }}
+QScrollBar:horizontal {{ background: transparent; height: 8px; }}
+QScrollBar::handle:horizontal {{ background: {BORDER}; border-radius: 4px; min-width: 20px; }}
 QScrollBar:vertical {{ background: transparent; width: 8px; }}
 QScrollBar::handle:vertical {{ background: {BORDER}; border-radius: 4px; min-height: 20px; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}

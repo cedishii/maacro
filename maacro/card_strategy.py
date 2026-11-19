@@ -4,8 +4,10 @@ Easy (the default): Star Golem card first; then a red card that adds Secret
 drop chance ("+50% Secret Drop Rate"; the mildest if there are several); then
 green, then blue/other; all red: the mildest one (cards.choose_card's rules).
 
-Hard: red cards as much as possible: Secret drop ones first, then the biggest
-SummerPearls bonus, then the mildest danger among equals (so +100% Enemy
+Hard: red cards as much as possible: Secret drop ones first — the highest
+Secret chance first ("+100%" over "+50%" over "+25%", whatever it pays in
+pearls) — then the biggest SummerPearls bonus, then the mildest danger among
+equals (so +100% Enemy
 Speed isn't taken when +10 Enemy Shield pays the same); enemy-regen cards
 still last. Then the Star Golem card, then green, then blue/other.
 
@@ -36,6 +38,22 @@ def secret_portal(card) -> bool:
     return "secret" in text or "secretdrop" in text or "dropratesecret" in text
 
 
+# The number right before "Secret": "+50% Secret Drop Rate", "•SO% Secret Dr.
+# Rate" (S/O read for 5/0), "+15% Secret Portal Chance".
+SECRET_RE = re.compile(r"([0-9OoSsIl|]{1,3})\s*[%°]\s*[^A-Za-z0-9]{0,3}\s*secret", re.IGNORECASE)
+_DIGIT_FIX = str.maketrans({"O": "0", "o": "0", "S": "5", "s": "5", "I": "1", "l": "1", "|": "1"})
+
+
+def secret_amount(card) -> int | None:
+    """How much Secret chance the card adds, in % (None = not read)."""
+    found = None
+    for match in SECRET_RE.finditer(card.text):
+        digits = match.group(1).translate(_DIGIT_FIX)
+        if digits.isdigit() and 1 <= int(digits) <= 500:
+            found = max(found or 0, int(digits))
+    return found
+
+
 def choose_easy(cards):
     if not cards:
         return None
@@ -62,11 +80,21 @@ def choose_hard(cards):
     if red:
         secret = [c for c in red if secret_portal(c)]
         pool = secret or red
-        # Biggest SummerPearls bonus; among equals the mildest danger.
-        best = min(pool, key=lambda c: (-(c.pearls or 0), c.debuff_rank,
+        # Highest Secret chance (an unread one counts as the lowest); then the
+        # biggest SummerPearls bonus; among equals the mildest danger.
+        best = min(pool, key=lambda c: (-(secret_amount(c) or 0) if secret else 0, -(c.pearls or 0),
+                                        c.debuff_rank,
                                         c.debuff_amount if c.debuff_amount is not None else 999, c.index))
         pearls = f"+{best.pearls}% pearls" if best.pearls is not None else "pearls unread"
-        why = "red with + Secret drop chance" if secret else "red"
+        if secret:
+            amount = secret_amount(best)
+            why = f"red with +{amount}% Secret" if amount else "red with + Secret (amount unread)"
+            others = sorted({secret_amount(c) for c in secret if c is not best and secret_amount(c)},
+                            reverse=True)
+            if others:
+                why += f" (others: {', '.join(f'+{n}%' for n in others)})"
+        else:
+            why = "red"
         return best, f"Hard: {why}, {pearls} ({_name(best)})"
     return _original(cards)
 

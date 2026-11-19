@@ -12,9 +12,9 @@ from ..general.config import GeneralConfig
 from . import theme
 
 INTRO = (
-    "General mode places units, upgrades them and waits — it never clicks Next, Replay, "
-    "Return to lobby or Play by itself. Add actions here to have it do those (or anything "
-    "else) for you: when a screen is up, click some text on it or press a key.\n"
+    "Any Stage mode places units, upgrades them and waits. Replay / Next Stage after a match "
+    "is a switch on its Configs tab; add actions here for anything else (Return to lobby, "
+    "Play, a portal…): when a screen is up, click some text on it or press a key.\n"
     "Text is matched like the screen reading on the Detection page shows it (\"Replay\", "
     "\"Next\", \"Return to lobby\"). Matchmaking and verification screens can't be used. "
     "Changes apply the next time you press Start."
@@ -60,7 +60,10 @@ class ActionRow(QFrame):
         self.key = QComboBox()
         for key in KEYS:
             self.key.addItem(key.upper(), key)
-        if action.kind == "key":
+        self.hold = _spin(action.hold, 30, "How long to hold the key down (walking: W for 2 s…).")
+        self.hold.setMinimum(0.1)
+        self.hold.setPrefix("for ")
+        if action.kind in ("key", "hold"):
             self.key.setCurrentIndex(max(0, self.key.findData(action.target)))
         else:
             self.text.setText(action.target)
@@ -75,21 +78,29 @@ class ActionRow(QFrame):
                 ("", remove)]):
             grid.addWidget(QLabel(label, objectName="Muted"), 0, column)
             grid.addWidget(widget, 1, column)
-        grid.addWidget(self.key, 1, 4)
+        keys = QWidget()
+        keys.setStyleSheet("background: transparent;")
+        keys_layout = QHBoxLayout(keys)
+        keys_layout.setContentsMargins(0, 0, 0, 0)
+        keys_layout.addWidget(self.key, 1)
+        keys_layout.addWidget(self.hold)
+        self.keys = keys
+        grid.addWidget(keys, 1, 4)
         grid.setColumnStretch(4, 1)
         self.kind.currentIndexChanged.connect(self._kind_changed)
         self._kind_changed()
 
     def _kind_changed(self) -> None:
-        key = self.kind.currentData() == "key"
-        self.key.setVisible(key)
-        self.text.setVisible(not key)
+        kind = self.kind.currentData()
+        self.keys.setVisible(kind in ("key", "hold"))
+        self.hold.setVisible(kind == "hold")
+        self.text.setVisible(kind == "click")
 
     def action(self) -> Action:
         kind = self.kind.currentData()
-        target = self.key.currentData() if kind == "key" else self.text.text().strip()
+        target = self.key.currentData() if kind in ("key", "hold") else self.text.text().strip()
         return Action(self.screen.currentData(), kind, target, self.wait.value(),
-                      self.repeat.value(), self.enabled.isChecked())
+                      self.repeat.value(), self.enabled.isChecked(), self.hold.value())
 
 
 class ActionsPage(QWidget):
@@ -113,7 +124,7 @@ class ActionsPage(QWidget):
         self.rows_layout = QVBoxLayout()
         self.rows_layout.setSpacing(8)
         layout.addLayout(self.rows_layout)
-        self.empty = QLabel("No actions yet — General mode only places, upgrades and waits.",
+        self.empty = QLabel("No actions yet — Any Stage mode only places, upgrades and waits.",
                             objectName="Muted")
         layout.addWidget(self.empty)
 
@@ -163,7 +174,7 @@ class ActionsPage(QWidget):
             self._message(f"Couldn't save: {exc}", theme.LOSS)
             return
         on = sum(a.enabled for a in actions)
-        self._message(f"Saved {len(actions)} action(s) ({on} on) for General mode.", theme.WIN)
+        self._message(f"Saved {len(actions)} action(s) ({on} on) for Any Stage mode.", theme.WIN)
 
     def _message(self, text: str, color: str) -> None:
         self.message.setStyleSheet(f"color: {color};")

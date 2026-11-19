@@ -13,6 +13,7 @@ class SessionStats(QObject):
         super().__init__(parent)
         self.wins = 0
         self.losses = 0
+        self.losses_in_row = 0      # losses since the last win
         self.pearls = 0             # SummerPearls earned this session
         # Item drops this session: "Name (Rarity)" → how many.
         self.drops: dict[str, int] = {}
@@ -30,10 +31,12 @@ class SessionStats(QObject):
 
     def add_win(self) -> None:
         self.wins += 1
+        self.losses_in_row = 0
         self.changed.emit()
 
     def add_loss(self) -> None:
         self.losses += 1
+        self.losses_in_row += 1
         self.changed.emit()
 
     def add_pearls(self, amount: int) -> None:
@@ -77,7 +80,7 @@ class SessionStats(QObject):
         return f"{s // 3600:02d}:{s % 3600 // 60:02d}:{s % 60:02d}"
 
     def reset(self) -> None:
-        self.wins = self.losses = 0
+        self.wins = self.losses = self.losses_in_row = 0
         self.pearls = 0
         self.drops = {}
         self._elapsed_before = 0.0

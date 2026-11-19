@@ -92,6 +92,18 @@ def find_roblox_window() -> int | None:
     return hwnd or None
 
 
+def window_state(hwnd: int | None) -> tuple[bool, bool, int, int]:
+    """(found, minimized, client width, client height) of a window."""
+    if not hwnd or not _user32.IsWindow(hwnd):
+        return False, False, 0, 0
+    if _user32.IsIconic(hwnd):
+        return True, True, 0, 0
+    rect = wintypes.RECT()
+    if not _user32.GetClientRect(hwnd, ctypes.byref(rect)):
+        return True, False, 0, 0
+    return True, False, rect.right - rect.left, rect.bottom - rect.top
+
+
 def capture_window(hwnd: int, from_screen: bool = False) -> np.ndarray | None:
     """Picture of the inside of a window as a BGRA array (height, width, 4).
     from_screen: copy it from the screen (only right while it's in front)."""

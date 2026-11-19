@@ -1,7 +1,9 @@
 """The Main page: live game view, overview panel and process log."""
 from __future__ import annotations
 
+import collections
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -12,9 +14,17 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from ..capture import CaptureThread
+from .. import relaunch, setup_check
+from .. import runs as runs_module
+from ..app_settings import AppSettings, hotkey_vk
+from ..auto_profile import with_auto_profile
+from ..unit_plan import with_unit_plan
+from ..remote import RemoteControl, help_text
+from ..capture import CaptureThread, window_state
 from ..control import input as inp
 from ..detector import DetectorThread
+from ..goals import goal_reached, goal_text
+from ..history import hms, load_runs, summarize
 from ..summer_config import SummerConfig
 from ..modes import BY_KEY, MODES, last_behavior, last_mode, save_behavior, save_mode
 from ..party import BEHAVIORS, PARTY, SOLO, with_party
@@ -40,6 +50,9 @@ class MainPage(QWidget):
         self.stats = stats
         self.capture = capture
         self.detector = detector
+        self.app_settings = AppSettings.load()
+        self.rejoin_watch = relaunch.RejoinWatch()
+        self._relaunching = False
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -85,7 +98,8 @@ class MainPage(QWidget):
         self.macros = {}
         for mode in MODES:
             thread_class = with_party(mode.thread_class) if mode.supports_party else mode.thread_class
-            thread = thread_class(capture, detector, parent=self)
+            thread = with_auto_profile(with_unit_plan(thread_class))(capture, detector, parent=self)
+            thread.profile_mode = mode.key      # profiles/<mode>/, picked by map
             thread.status.connect(self.action_value.setText)
             thread.log.connect(self.log_panel.log)
             thread.finished.connect(self._on_macro_finished)
@@ -95,6 +109,7 @@ class MainPage(QWidget):
             thread.run_recorded.connect(
                 lambda record: self.stats.add_pearls(record.pearls) if record.pearls else None)
             thread.run_recorded.connect(self._post_run)
+            thread.run_recorded.connect(lambda _record: self.refresh_lifetime())
             thread.log.connect(self._watch_for_alerts)
             if hasattr(thread, "progress"):
                 thread.progress.connect(self._on_ic_progress)
@@ -103,12 +118,26 @@ class MainPage(QWidget):
         self._set_mode(last_mode())
         self._set_behavior(last_behavior())
 
-        # F1 = start, F3 = stop; checked even when Roblox is in front.
+        # Start / stop hotkeys (F1 / F3 unless changed in Settings); checked
+        # even when Roblox is in front.
         self._keys_down: set[int] = set()
         self._hotkeys = QTimer(self, interval=80, timeout=self._poll_hotkeys)
         self._hotkeys.start()
+        # Discord remote control (Settings): commands from the player's phone.
+        self.remote = RemoteControl(self)
+        self.remote.command.connect(self._on_remote_command)
+        self.remote.log.connect(self.log_panel.log)
+        # Setup check: the last screen reads (sampled every 2 s).
+        self._recent_screens: collections.deque = collections.deque(maxlen=30)
+        self._screen_sampler = QTimer(self, interval=2000, timeout=self._sample_screen)
+        self._screen_sampler.start()
+        # Auto-rejoin (Settings → Roblox): looked at every 3 s.
+        self._rejoin_timer = QTimer(self, interval=3000, timeout=self._check_rejoin)
+        self._rejoin_timer.start()
+        self.apply_app_settings()
 
-        self.log_panel.log("MAACRO started. Waiting for Roblox… (F1 = start, F3 = stop)")
+        self.log_panel.log(f"MAACRO started. Waiting for Roblox… ({self.app_settings.start_key} = start, "
+                           f"{self.app_settings.stop_key} = stop)")
 
     # --- layout --------------------------------------------------------
     def _build_overview(self) -> QWidget:
@@ -189,6 +218,17 @@ class MainPage(QWidget):
         box_layout.addWidget(row)
         row, self.resolution_value = key_value_row("Size", "—")
         box_layout.addWidget(row)
+        setup_row = QHBoxLayout()
+        setup_row.addWidget(QLabel("Setup", objectName="Muted"))
+        setup_row.addStretch()
+        self.setup_value = QLabel("—", objectName="Value")
+        setup_row.addWidget(self.setup_value)
+        check = QPushButton("Check")
+        check.setToolTip("Check the Roblox window, screen reading and this mode's unit setup "
+                         "(the details go to the log). Also done on every Start.")
+        check.clicked.connect(lambda: self.run_setup_check(log_all=True))
+        setup_row.addWidget(check)
+        box_layout.addLayout(setup_row)
         col.addWidget(box)
 
         # Current match
@@ -225,8 +265,15 @@ class MainPage(QWidget):
         box_layout.addWidget(row)
         row, self.time_value = key_value_row("Session Time", "00:00:00")
         box_layout.addWidget(row)
-        row, self.pearls_value = key_value_row("SummerPearls Earned", "0")
+        row, self.goal_value = key_value_row("Session Goal", "None")
+        self.goal_value.setToolTip("Settings → Session goals: stop by itself after N runs, "
+                                   "after so long, or after too many losses in a row.")
         box_layout.addWidget(row)
+        row, self.lifetime_value = key_value_row("All-time Runs", "—")
+        row.setToolTip("Every run ever recorded (runs/runs.csv). Details on the Stats page.")
+        box_layout.addWidget(row)
+        self.pearls_row, self.pearls_value = key_value_row("SummerPearls Earned", "0")
+        box_layout.addWidget(self.pearls_row)
         row, self.charms_value = key_value_row("Charms Dropped", "0")
         box_layout.addWidget(row)
         row, self.portals_value = key_value_row("Portals Dropped", "0")
@@ -346,6 +393,8 @@ class MainPage(QWidget):
         if self.mode_box.currentIndex() != index:
             self.mode_box.setCurrentIndex(index)
         self.ic_box.setVisible(key == "infinity_castle")
+        if hasattr(self, "pearls_row"):
+            self.pearls_row.setVisible(key == "summer" or self.stats.pearls > 0)
         if hasattr(self, "cards_row"):
             self.cards_row.setVisible(key == "summer")
         self.log_panel.log(f"Mode: {BY_KEY[key].label}.")
@@ -382,8 +431,19 @@ class MainPage(QWidget):
         if self.stats.running or any(t.isRunning() for t in self.macros.values()):
             return
         self.macro.settings = BY_KEY[self.mode].config_class.load()
+        self.macro.auto_profiles = AppSettings.load().auto_profiles
+        runs_module.current_mode = self.mode_label()
         if hasattr(self.macro, "set_behavior"):
             self.macro.set_behavior(self.behavior)
+        self.app_settings = AppSettings.load()
+        reason = goal_reached(self.app_settings, self.stats.runs, self.stats.session_seconds,
+                              self.stats.losses_in_row)
+        if reason:
+            self.log_panel.log(f"Session goal already reached ({reason}) — press Reset under "
+                               "Session Results or change the goal in Settings first.", "Warn")
+            return
+        self.rejoin_watch.reset()
+        self.run_setup_check(log_all=False)
         self.stats.start()
         self.mode_box.setEnabled(False)
         self.behavior_box.setEnabled(False)
@@ -430,8 +490,192 @@ class MainPage(QWidget):
         if self.stats.running and not self.macro.isRunning():
             self.macro.start()
 
+    # --- app settings: hotkeys, goals, rejoin ---------------------------
+    def apply_app_settings(self, settings: AppSettings | None = None) -> None:
+        """Use new Settings-page values (hotkeys, goals, rejoin) right away."""
+        self.app_settings = settings or AppSettings.load()
+        s = self.app_settings
+        self._start_vk = hotkey_vk(s.start_key) or inp.VK_F1
+        self._stop_vk = hotkey_vk(s.stop_key) or inp.VK_F3
+        self._keys_down.clear()
+        self.start_button.setText(f"Start ({s.start_key})")
+        self.stop_button.setText(f"Stop ({s.stop_key})")
+        self.remote.configure(s.remote_enabled, s.remote_token, s.remote_channel, s.remote_user)
+        for thread in self.macros.values():
+            thread.auto_profiles = s.auto_profiles
+        self._refresh_stats()
+        self.refresh_lifetime()
+
+    def refresh_lifetime(self) -> None:
+        """All-time runs from runs.csv (after each run, and when asked)."""
+        runs = load_runs()
+        wins = sum(1 for r in runs if r.result == "win")
+        self.lifetime_value.setText(f"{len(runs):,}" + (f" ({wins * 100 // len(runs)}% won)" if runs else ""))
+
+    def _check_goals(self) -> None:
+        if not self.stats.running:
+            return
+        reason = goal_reached(self.app_settings, self.stats.runs, self.stats.session_seconds,
+                              self.stats.losses_in_row)
+        if not reason:
+            return
+        self.log_panel.log(f"Session goal reached: {reason} — stopping.", "Warn")
+        self.stop_macro()
+        close = self.app_settings.close_roblox_at_goal
+        self.notifier.session_finished(reason, self.stats, self.mode_label(), closed_roblox=close)
+        if close:
+            self.log_panel.log("Closing Roblox (Settings → Session goals).")
+            threading.Thread(target=relaunch.close_roblox, daemon=True).start()
+
+    def _check_rejoin(self) -> None:
+        if self._relaunching:
+            return
+        allow_stuck = not (self.mode == "general"
+                           and getattr(self.macro.settings, "after_match", "none") == "none")
+        action, why = self.rejoin_watch.check(self.app_settings, self.stats.running,
+                                              bool(self.capture.hwnd), self.detector.tracker.screen,
+                                              allow_stuck=allow_stuck)
+        if not action:
+            return
+        self.relaunch_roblox(action, why)
+
+    def relaunch_roblox(self, action: str, why: str) -> bool:
+        """Open Roblox ("open") or close and reopen it ("restart") on the
+        server link. False if it can't (bad link, already relaunching)."""
+        if self._relaunching:
+            return False
+        link = self.app_settings.server_link
+        try:
+            relaunch.launch_uri(link)
+        except ValueError as exc:
+            self.log_panel.log(f"Can't rejoin: the server link in Settings is wrong ({exc}).", "Error")
+            self.rejoin_watch.note_launch()     # don't repeat this every 3 s
+            return False
+        where = relaunch.describe(link)
+        self.log_panel.log(f"Rejoining: {why} — "
+                           + ("closing Roblox and " if action == "restart" else "")
+                           + f"opening it on {where}.", "Warn")
+        self.notifier.rejoined(why, where)
+        self.rejoin_watch.note_launch()
+        self._relaunching = True
+        inp.release_all()
+
+        def work():
+            try:
+                if action == "restart":
+                    relaunch.close_roblox()
+                    time.sleep(5)
+                relaunch.open_roblox(link)
+            except Exception as exc:
+                self._log_bridge.line.emit(f"Couldn't open Roblox: {exc}", "Error")
+            finally:
+                self._relaunching = False
+        threading.Thread(target=work, daemon=True).start()
+        return True
+
+    # --- setup check -------------------------------------------------------
+    def _sample_screen(self) -> None:
+        latest = self.detector.latest
+        if latest is not None:
+            self._recent_screens.append(latest.screen)
+
+    def _ocr_error(self) -> str:
+        if not hasattr(self, "_ocr_problem"):
+            try:
+                from ..vision.ocr import OcrReader
+                OcrReader()
+                self._ocr_problem = ""
+            except Exception as exc:
+                self._ocr_problem = str(exc)
+        return self._ocr_problem
+
+    def run_setup_check(self, log_all: bool = True) -> list[tuple[str, str]]:
+        """Check the setup; problems go to the log (everything with log_all)."""
+        found, minimized, width, height = window_state(self.capture.hwnd)
+        facts = setup_check.Facts(found, minimized, width, height, self._ocr_error(),
+                                  list(self._recent_screens), self.mode,
+                                  BY_KEY[self.mode].config_class.load())
+        results = setup_check.check(facts)
+        text = setup_check.summary(results)
+        color = (theme.LOSS if any(l == setup_check.ERROR for l, _ in results)
+                 else theme.WARN if any(l == setup_check.WARN for l, _ in results) else theme.WIN)
+        self.setup_value.setText(text)
+        self.setup_value.setStyleSheet(f"color: {color};")
+        for level, line in results:
+            if level == setup_check.OK and not log_all:
+                continue
+            self.log_panel.log(f"Setup: {line}", {"ok": "Info", "warn": "Warn", "error": "Error"}[level])
+        return results
+
+    # --- Discord remote control -----------------------------------------
+    def _on_remote_command(self, command: str) -> None:
+        self.log_panel.log(f"Discord remote: !{command}")
+        reply = self.remote.reply
+        if command == "help":
+            reply(help_text())
+        elif command == "status":
+            reply(self._status_text())
+        elif command == "stats":
+            reply(self._stats_text())
+        elif command == "ss":
+            image = self.capture.latest_qimage() or getattr(self, "_last_image", None)
+            if image is None:
+                reply("No picture of the game yet — is Roblox open (not minimized)?")
+                return
+            path = Path(tempfile.gettempdir()) / f"maacro_ss_{time.time_ns()}.jpg"
+            if not image.save(str(path), "JPG", 85):
+                reply("Couldn't save the screenshot.")
+                return
+            reply(f"{self.mode_label()} — {self.screen_value.text()}", path, delete_after=True)
+        elif command == "start":
+            if self.stats.running:
+                reply("Already running.")
+                return
+            self.start_macro()
+            reply("Started." if self.stats.running else "Couldn't start — check the log (session goal reached?).")
+        elif command == "stop":
+            if not self.stats.running:
+                reply("It isn't running.")
+                return
+            self.stop_macro()
+            reply(f"Stopped. {self._session_line()}")
+        elif command == "rejoin":
+            ok = self.relaunch_roblox("restart", "asked from Discord")
+            reply("Restarting Roblox…" if ok else "Can't rejoin right now (check the server link in Settings).")
+
+    def _session_line(self) -> str:
+        s = self.stats
+        rate = f" ({s.win_rate:.0f}%)" if s.runs else ""
+        return f"Session: {s.wins} wins, {s.losses} losses{rate} in {s.session_time_text()}."
+
+    def _status_text(self) -> str:
+        running = "🟢 Running" if self.stats.running else "🔴 Stopped"
+        lines = [f"**{self.mode_label()}** — {running}",
+                 f"Screen: {self.screen_value.text()} · Doing: {self.action_value.text()}",
+                 f"Map: {self.map_value.text()} · Wave: {self.wave_value.text()}",
+                 self._session_line()]
+        goal = goal_text(self.app_settings, self.stats.runs)
+        if goal != "None":
+            lines.append(f"Goal: {goal}")
+        return "\n".join(lines)
+
+    def _stats_text(self) -> str:
+        summary = summarize(load_runs())
+        t, today = summary.total, summary.today
+        lines = [self._session_line(),
+                 f"Today: {today.runs} runs, {today.wins} wins" + (f" ({today.win_rate:.0f}%)" if today.runs else ""),
+                 f"All time: {t.runs:,} runs, {t.wins:,} wins ({t.win_rate:.1f}%), best streak {summary.best_win_streak}, "
+                 f"avg stage {hms(t.avg_seconds)}"]
+        top = ", ".join(f"{g.name} {g.runs}" for g in summary.by_map[:3])
+        if top:
+            lines.append(f"Most played: {top}")
+        if self.stats.drops:
+            drops = sorted(self.stats.drops.items(), key=lambda kv: -kv[1])[:8]
+            lines.append("Drops: " + ", ".join(f"{k} ×{n}" for k, n in drops))
+        return "\n".join(lines)
+
     def _poll_hotkeys(self) -> None:
-        for vk, action in ((inp.VK_F1, self.start_macro), (inp.VK_F3, self.stop_macro)):
+        for vk, action in ((self._start_vk, self.start_macro), (self._stop_vk, self.stop_macro)):
             if inp.is_pressed(vk):
                 if vk not in self._keys_down:
                     self._keys_down.add(vk)
@@ -440,6 +684,7 @@ class MainPage(QWidget):
                 self._keys_down.discard(vk)
 
     def shutdown(self) -> None:
+        self.remote.stop()
         for thread in self.macros.values():
             thread.requestInterruption()
         for thread in self.macros.values():
@@ -465,6 +710,7 @@ class MainPage(QWidget):
         self.win_rate_value.setText(f"{s.win_rate:.1f}%" if s.runs else "0%")
         self.runs_value.setText(str(s.runs))
         self.pearls_value.setText(f"{s.pearls:,}")
+        self.pearls_row.setVisible(getattr(self, "mode", "") == "summer" or s.pearls > 0)
         self.charms_value.setText(str(s.drop_count("charm")))
         self.portals_value.setText(str(s.drop_count("portal")))
         drops = sorted(s.drops.items(), key=lambda kv: -kv[1])
@@ -478,6 +724,10 @@ class MainPage(QWidget):
 
     def _refresh_time(self) -> None:
         self.time_value.setText(self.stats.session_time_text())
+        if hasattr(self, "app_settings") and hasattr(self, "goal_value"):
+            self.goal_value.setText(goal_text(self.app_settings, self.stats.runs))
+            if self.app_settings.stop_after_minutes:
+                self._check_goals()
 
     def _on_frame(self, image: QImage) -> None:
         self._last_image = image            # for drop posts
@@ -518,3 +768,5 @@ class MainPage(QWidget):
             else:
                 self.stats.add_loss()
                 self.log_panel.log(f"DEFEAT detected — loss counted (run {self.stats.runs}).", "Warn")
+            # A moment later, so the end screen is recorded (and posted) first.
+            QTimer.singleShot(4000, self._check_goals)

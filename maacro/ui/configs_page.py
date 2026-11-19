@@ -9,13 +9,15 @@ the macro already uses, so nothing about how a mode plays changes.
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QRadioButton, QScrollArea, QSpinBox, QTabWidget, QVBoxLayout, QWidget,
+    QApplication, QButtonGroup, QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
+    QLineEdit, QMessageBox, QPushButton, QRadioButton, QScrollArea, QSpinBox, QTabWidget,
+    QVBoxLayout, QWidget,
 )
 
 from ..config import VALID_KEYS, MacroConfig
 from ..general.config import GeneralConfig
 from ..infinity_castle.config import InfinityConfig
+from .. import profiles
 from ..summer_config import SummerConfig
 from ..sky_portal.config import SkyPortalConfig
 from . import theme
@@ -96,7 +98,7 @@ class UnitCard(QFrame):
     """Settings for one hotbar slot."""
 
     def __init__(self, key: str, path_option: bool, farm_option: bool = False, cap_option: bool = False,
-                 parent=None):
+                 wave_option: bool = False, parent=None):
         super().__init__(parent)
         self.setObjectName("Card")
         self.key = key
@@ -143,8 +145,31 @@ class UnitCard(QFrame):
             self.cap.setToolTip("Stop upgrading this unit after this many upgrades (the segments "
                                 "on its bar in the Unit Overview). Max = all the way.")
             grid.addWidget(self.cap, 7, 0)
+        self.place_wave = self.upgrade_wave = None
+        if wave_option:
+            grid.addWidget(QLabel("From wave: place · upgrade", objectName="Muted"), 6, 1)
+            waves = QWidget()
+            waves.setStyleSheet("background: transparent;")
+            row = QHBoxLayout(waves)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(6)
+            self.place_wave = self._wave_spin("Don't place this unit before this wave "
+                                              "(e.g. a late-game unit). Start = right away.")
+            self.upgrade_wave = self._wave_spin("Don't upgrade this unit before this wave (money "
+                                                "goes to the others first). Start = right away.")
+            row.addWidget(self.place_wave)
+            row.addWidget(self.upgrade_wave)
+            grid.addWidget(waves, 7, 1)
         self.enabled.toggled.connect(self._enable)
         self.upgrade.toggled.connect(lambda _: self._enable(self.enabled.isChecked()))
+
+    @staticmethod
+    def _wave_spin(tip: str) -> QSpinBox:
+        spin = QSpinBox()
+        spin.setRange(0, 999)
+        spin.setSpecialValueText("Start")
+        spin.setToolTip(tip)
+        return spin
 
     @staticmethod
     def _spin(low: int, high: int, tip: str) -> QSpinBox:
@@ -154,12 +179,14 @@ class UnitCard(QFrame):
         return spin
 
     def _enable(self, on: bool) -> None:
-        for widget in (self.placements, self.place_priority, self.upgrade, self.path, self.farm, self.cap):
+        for widget in (self.placements, self.place_priority, self.upgrade, self.path, self.farm, self.cap,
+                       self.place_wave, self.upgrade_wave):
             if widget is not None:
                 widget.setEnabled(on)
         self.upgrade_priority.setEnabled(on and self.upgrade.isChecked())
 
-    def set_values(self, values: dict, on_path: bool, farm: bool = False, cap: int = 0) -> None:
+    def set_values(self, values: dict, on_path: bool, farm: bool = False, cap: int = 0,
+                   place_wave: int = 0, upgrade_wave: int = 0) -> None:
         self.enabled.setChecked(values["enabled"])
         self.name.setText(values["name"])
         self.placements.setValue(values["placements"])
@@ -172,6 +199,9 @@ class UnitCard(QFrame):
             self.farm.setChecked(farm)
         if self.cap is not None:
             self.cap.setValue(int(cap or 0))
+        if self.place_wave is not None:
+            self.place_wave.setValue(int(place_wave or 0))
+            self.upgrade_wave.setValue(int(upgrade_wave or 0))
         self._enable(values["enabled"])
 
     def values(self) -> dict:
@@ -186,12 +216,15 @@ class ModeSettings(QWidget):
     """One mode's tab: unit cards and switches, saved to that mode's file."""
 
     def __init__(self, config_class: type, switches: dict[str, str],
-                 choices: dict[str, tuple[str, list[tuple[str, str]]]] | None = None, parent=None):
+                 choices: dict[str, tuple[str, list[tuple[str, str]]]] | None = None,
+                 mode_key: str = "", parent=None):
         super().__init__(parent)
         self.config_class = config_class
+        self.mode_key = mode_key
         self.ic = issubclass(config_class, InfinityConfig)
         self.farm = "farm_units" in getattr(config_class, "__dataclass_fields__", {})
         self.caps = "upgrade_caps" in getattr(config_class, "__dataclass_fields__", {})
+        self.waves = "place_from_wave" in getattr(config_class, "__dataclass_fields__", {})
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 8, 0, 0)
         layout.setSpacing(10)
@@ -200,7 +233,8 @@ class ModeSettings(QWidget):
         grid.setSpacing(10)
         self.cards = {}
         for index, key in enumerate(VALID_KEYS):
-            card = UnitCard(key, path_option=self.ic, farm_option=self.farm, cap_option=self.caps)
+            card = UnitCard(key, path_option=self.ic, farm_option=self.farm, cap_option=self.caps,
+                            wave_option=self.waves)
             grid.addWidget(card, index // 2, index % 2)
             self.cards[key] = card
         layout.addLayout(grid)
@@ -233,15 +267,143 @@ class ModeSettings(QWidget):
         actions.addWidget(self.message)
         actions.addStretch()
         layout.addLayout(actions)
+        if mode_key:
+            layout.addWidget(self._profiles_box())
         layout.addStretch()
         self.show_config(config_class.load())
+
+    # --- profiles and share codes ------------------------------------------
+    def _profiles_box(self) -> QFrame:
+        box, box_layout = panel("Profiles & sharing")
+        box_layout.addWidget(QLabel(
+            "Keep a setup per stage or team and switch in one click. A share code is this setup "
+            "as one line of text — send it to a friend, or paste theirs.", objectName="Muted",
+            wordWrap=True))
+        row = QHBoxLayout()
+        self.profile_box = QComboBox()
+        self.profile_box.setMinimumWidth(220)
+        self.profile_box.setToolTip("Saved profiles for this mode.")
+        row.addWidget(self.profile_box, 1)
+        for text, slot, tip in (
+                ("Load", self._load_profile, "Use this profile (saved as the mode's setup right away)."),
+                ("Delete", self._delete_profile, "Delete this profile."),
+        ):
+            button = QPushButton(text)
+            button.setToolTip(tip)
+            button.clicked.connect(slot)
+            row.addWidget(button)
+        box_layout.addLayout(row)
+        row = QHBoxLayout()
+        self.profile_name = QLineEdit(placeholderText="Profile name, e.g. Shibuya Act 6 — farm team")
+        row.addWidget(self.profile_name, 1)
+        save_as = QPushButton("Save as profile")
+        save_as.setToolTip("Save the setup above (also saved as the mode's setup) under this name.")
+        save_as.clicked.connect(self._save_profile)
+        row.addWidget(save_as)
+        box_layout.addLayout(row)
+        row = QHBoxLayout()
+        self.code_edit = QLineEdit(placeholderText="Paste a share code (MAACRO1:…)")
+        row.addWidget(self.code_edit, 1)
+        import_button = QPushButton("Import code")
+        import_button.clicked.connect(self._import_code)
+        row.addWidget(import_button)
+        copy_button = QPushButton("Copy share code")
+        copy_button.setToolTip("Save the setup above and copy it as a share code.")
+        copy_button.clicked.connect(self._copy_code)
+        row.addWidget(copy_button)
+        box_layout.addLayout(row)
+        self._refresh_profiles()
+        return box
+
+    def _refresh_profiles(self, select: str = "") -> None:
+        names = profiles.list_profiles(self.mode_key)
+        self.profile_box.clear()
+        self.profile_box.addItems(names)
+        self.profile_box.setPlaceholderText("No profiles yet" if not names else "")
+        if select in names:
+            self.profile_box.setCurrentText(select)
+
+    def _save_profile(self) -> None:
+        name = self.profile_name.text().strip() or self.profile_box.currentText()
+        if not name:
+            self._message("Type a name for the profile first.", theme.LOSS)
+            return
+        if not self.save():
+            return
+        try:
+            used = profiles.save_profile(self.mode_key, name, self.config_class.load())
+        except (ValueError, OSError) as exc:
+            self._message(f"Couldn't save the profile: {exc}", theme.LOSS)
+            return
+        self._refresh_profiles(used)
+        self.profile_name.clear()
+        self._message(f"Profile '{used}' saved.", theme.WIN)
+
+    def _load_profile(self) -> None:
+        name = self.profile_box.currentText()
+        if not name:
+            self._message("No profile picked.", theme.LOSS)
+            return
+        try:
+            config = profiles.load_profile(self.mode_key, name, self.config_class)
+            config.save()
+        except (ValueError, OSError) as exc:
+            self._message(f"Couldn't load '{name}': {exc}", theme.LOSS)
+            return
+        self.show_config(config)
+        self._message(f"Profile '{name}' loaded — it applies the next time you press Start.", theme.WIN)
+
+    def _delete_profile(self) -> None:
+        name = self.profile_box.currentText()
+        if not name:
+            return
+        if QMessageBox.question(self, "Delete profile", f"Delete the profile '{name}'?") \
+                != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            profiles.delete_profile(self.mode_key, name)
+        except (ValueError, OSError) as exc:
+            self._message(f"Couldn't delete: {exc}", theme.LOSS)
+            return
+        self._refresh_profiles()
+        self._message(f"Profile '{name}' deleted.", theme.MUTED)
+
+    def _copy_code(self) -> None:
+        if not self.save():
+            return
+        code = profiles.share_code(self.mode_key, self.config_class.load())
+        QApplication.clipboard().setText(code)
+        self._message(f"Share code copied ({len(code)} characters) — paste it anywhere.", theme.WIN)
+
+    def _import_code(self) -> None:
+        try:
+            mode, data = profiles.read_code(self.code_edit.text())
+        except ValueError as exc:
+            self._message(str(exc), theme.LOSS)
+            return
+        if mode and mode != self.mode_key:
+            self._message(f"That code is for another mode ({mode}) — open that mode's tab to import it.",
+                          theme.LOSS)
+            return
+        config = profiles.apply_data(self.config_class.load(), data)
+        try:
+            config.save()
+        except OSError as exc:
+            self._message(f"Couldn't save: {exc}", theme.LOSS)
+            return
+        self.show_config(config)
+        self.code_edit.clear()
+        self._message("Code imported and saved — it applies the next time you press Start.", theme.WIN)
 
     def show_config(self, config: MacroConfig) -> None:
         path = set(getattr(config, "path_units", []))
         farm = set(getattr(config, "farm_units", []))
         caps = getattr(config, "upgrade_caps", {}) or {}
+        place_waves = getattr(config, "place_from_wave", {}) or {}
+        upgrade_waves = getattr(config, "upgrade_from_wave", {}) or {}
         for key, values in cards_from_config(config).items():
-            self.cards[key].set_values(values, key in path, key in farm, caps.get(key, 0))
+            self.cards[key].set_values(values, key in path, key in farm, caps.get(key, 0),
+                                       place_waves.get(key, 0), upgrade_waves.get(key, 0))
         for name, box in self.switches.items():
             box.setChecked(bool(getattr(config, name)))
         for name, buttons in self.choices.items():
@@ -259,12 +421,12 @@ class ModeSettings(QWidget):
                 if current in buttons:
                     buttons[current].setChecked(True)
 
-    def save(self) -> None:
+    def save(self) -> bool:
         cards = {key: card.values() for key, card in self.cards.items()}
         order, upgrades = config_lists(cards)
         if not order:
             self._message("Enable at least one unit.", theme.LOSS)
-            return
+            return False
         config = self.config_class.load()
         config.placement_order, config.upgrade_priority = order, upgrades
         config.unit_names = {key: cards[key]["name"] for key in VALID_KEYS}
@@ -274,6 +436,11 @@ class ModeSettings(QWidget):
         if self.caps:
             config.upgrade_caps = {k: card.cap.value() for k, card in self.cards.items()
                                    if card.cap is not None and card.cap.value() > 0}
+        if self.waves:
+            config.place_from_wave = {k: card.place_wave.value() for k, card in self.cards.items()
+                                      if card.place_wave.value() > 0 and cards[k]["enabled"]}
+            config.upgrade_from_wave = {k: card.upgrade_wave.value() for k, card in self.cards.items()
+                                        if card.upgrade_wave.value() > 0 and cards[k]["enabled"]}
         if self.farm:
             config.farm_units = [k for k, card in self.cards.items()
                                  if card.farm is not None and card.farm.isChecked() and cards[k]["enabled"]]
@@ -285,10 +452,11 @@ class ModeSettings(QWidget):
             config.save()
         except OSError as exc:
             self._message(f"Couldn't save: {exc}", theme.LOSS)
-            return
+            return False
         place_only = [k for k in dict.fromkeys(order) if k not in upgrades]
         self._message(f"Saved. Placement order: {order_text(order)} · upgrades: {' '.join(upgrades) or 'none'}"
                       + (f" · place only: {' '.join(place_only)}" if place_only else ""), theme.WIN)
+        return True
 
     def _message(self, text: str, color: str) -> None:
         self.message.setStyleSheet(f"color: {color};")
@@ -322,25 +490,29 @@ class ConfigsPage(QWidget):
                      "Star Golem card during Starfall)"),
             ("hard", "Hard — red cards as much as possible (+ Secret Drop Rate ones first, then "
                      "the most SummerPearls, the mildest danger among equals)"),
-        ])}), "Summer Event")
+        ])}, mode_key="summer"), "Summer Event")
         tabs.addTab(ModeSettings(InfinityConfig, {
             "place_units": "Place units",
             "upgrade_units": "Upgrade units to Max (unit manager, F)",
             "auto_vote_start": "Vote Yes on 'Vote start'",
             "fast_economy": "Fast economy: place and upgrade twice as often (money comes fast)",
-        }), "Infinity Castle")
+        }, mode_key="infinity_castle"), "Infinity Castle")
         tabs.addTab(ModeSettings(GeneralConfig, {
             "place_units": "Place units",
             "upgrade_units": "Upgrade units to Max (unit manager, F)",
             "use_map_zones": "Use saved map zones (and the walk some maps need); off = automatic spots, never moves",
             "auto_vote_start": "Vote Yes on 'Vote start' (off = wait)",
             "auto_card_pick": "Pick cards if a card vote shows up (off = wait)",
-        }), "General")
+        }, {"after_match": ("After the match", [
+            ("none", "Leave it to me — wait on the results screen"),
+            ("replay", "Replay the same stage (farm it)"),
+            ("next", "Next Stage — go on to the next act/stage (Replay when there's none)"),
+        ])}, mode_key="general"), "Any Stage")
         tabs.addTab(ModeSettings(SkyPortalConfig, {
             "place_units": "Place units",
             "upgrade_units": "Upgrade units to Max (unit manager, F)",
             "use_map_zones": "Use the Sky Portal spots (maps/sky_portal); off = automatic spots",
             "auto_vote_start": "Vote Yes on 'Vote start'",
             "auto_card_pick": "Pick cards if a card vote shows up (off = wait)",
-        }), "Sky Portal")
+        }, mode_key="sky_portal"), "Sky Portal")
         layout.addWidget(tabs)
