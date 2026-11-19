@@ -31,7 +31,7 @@ KNOWN_MAPS = (
 
 # Stage kinds, by words in the name (checked fuzzily, in this order).
 KINDS = (
-    ("Infinity Mansion", ("infinit", "mansion", "room")),
+    ("Infinity Mansion", ("infinit", "infinity", "mansion", "room")),
     ("Summer Hunt", ("summer", "hunt")),
     ("Portal", ("portal", "tier")),
     ("Underwater", ("underwater",)),
@@ -57,6 +57,10 @@ def split_map(raw: str) -> tuple[str, str]:
         if any(w in squashed for w in words) or _fuzzy_word(text, words):
             kind = name
             break
+    # Infinite mode ("… Infinite") — not an Infinity Mansion room.
+    if kind == "Infinity Mansion" and "infinite" in squashed and not any(
+            w in squashed for w in ("mansion", "room", "infinity")):
+        kind = "Infinite"
     # "Sky Portal" is a map, not a portal stage.
     if kind == "Portal" and "skyportal" in squashed and "tier" not in squashed:
         kind = ""
@@ -78,7 +82,7 @@ def split_map(raw: str) -> tuple[str, str]:
             kind = ""
         return best, kind
     # Unknown: keep the words before the stage kind / numbers.
-    cleaned = re.split(r"\b(?:act|room|tier|summer|infinity|portal)\b|\d", text, maxsplit=1,
+    cleaned = re.split(r"\b(?:act|room|tier|summer|infinity|infinite|portal)\b|\d", text, maxsplit=1,
                        flags=re.IGNORECASE)[0].strip(" -'")
     return (cleaned or text), kind
 

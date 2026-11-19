@@ -3,7 +3,9 @@ Leader or Party Member). Same choices as the Mode and Role boxes on the Main
 page (they stay in sync)."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout,
+                               QWidget)
 
 from ..modes import MODES
 from ..party import BEHAVIORS
@@ -16,10 +18,19 @@ DESCRIPTIONS = {
                         "units on the circled path) and upgrade → Next → Next Room, or Retry "
                         "after a defeat → again, forever. Never goes back to the lobby; no "
                         "matchmaking, captcha or cards."),
-    "general": ("For anything else (story, raids, portals…). Start the match yourself; MAACRO "
-                "zooms out, places your units, upgrades them to Max and waits. It never clicks "
-                "Play, Next, Replay or Return to lobby — you do. Voting Yes and picking cards "
-                "are off unless you switch them on in its Configs tab."),
+    "story": ("Start the first act yourself. Each act: vote Yes → place and upgrade → a win → "
+              "Next Stage, a defeat → Retry the act. Or farm one act (always Replay). After the last "
+              "act: replay it, or stop. Never clicks Play or Return to lobby."),
+    "infinite": ("Start an Infinite run yourself. MAACRO places and upgrades as long as the waves "
+                 "keep coming; after the defeat that ends the run it presses Replay and goes again. "
+                 "The log keeps the wave reached and the session's best."),
+    "challenge": ("Start a challenge yourself. MAACRO plays it, then presses Replay if the game "
+                  "offers one, otherwise Return to lobby. In the lobby, your lobby Actions (Actions "
+                  "page, Challenge) can walk to the next challenge; otherwise it waits for you."),
+    "general": ("For anything else (legend stages, raids, portals, someone else's lobby…). Start "
+                "the match yourself; MAACRO zooms out, places your units and upgrades them. After "
+                "the match it waits, or presses Replay / Next Stage if you set that on its Configs "
+                "tab. Never clicks Play or Return to lobby."),
     "sky_portal": ("Join the party leader's Sky Portal. MAACRO waits in the lobby and through "
                    "the vote (votes Yes — the vote is everyone's), zooms out, places every unit on its spot, maxes the farm units "
                    "(Bulby, C.E.O.) first, then upgrades the damage units (Elyssia, Fishi) as "
@@ -41,7 +52,15 @@ class ModesPage(QWidget):
     def __init__(self, main_page, parent=None):
         super().__init__(parent)
         self.main_page = main_page
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea(widgetResizable=True)       # seven modes: scroll, don't squash
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        outer.addWidget(scroll)
+        body = QWidget()
+        scroll.setWidget(body)
+        layout = QVBoxLayout(body)
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(12)
         layout.addWidget(QLabel("Modes", objectName="PageTitle"))

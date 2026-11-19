@@ -3,6 +3,20 @@
 ## Unreleased
 
 **New**
+- **Story, Infinite and Challenge modes** (built on Any Stage's tested match play, each with its
+  own Configs tab, Actions list and profiles):
+  - *Story*: a win → Next Stage (on through the acts), a defeat → Retry; or farm one act
+    (always Replay). After the last act (a win with no Next Stage, seen twice): replay it, or
+    stop with a Discord summary.
+  - *Infinite*: plays until the defeat that ends the run, then Replay; the log keeps the wave
+    reached and the session's best. Stats show "Infinite" as its own stage kind.
+  - *Challenge*: Replay if the game offers it, otherwise Return to lobby (or always lobby, or
+    leave it to you); lobby Actions can walk to the next challenge.
+- **Actions per mode** (Actions page → "Actions for").
+
+**Changed**
+- Any Stage is now for legend stages, raids, portals and the rest; Story has its own mode.
+- The Modes page scrolls (seven modes no longer squash their descriptions).
 - **Stop at a clock time** (Settings → Session goals): e.g. 07:00 — started at 23:00, it stops
   at 07:00 the next morning.
 - **Discord status post every N minutes** (Settings → Discord updates): a picture of the game

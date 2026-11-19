@@ -1,5 +1,6 @@
-"""The Actions page: your own "on this screen, click/press this" rules for
-General mode (see maacro/general/actions.py)."""
+"""The Actions page: your own "on this screen, click/press/hold this" rules,
+per mode — Story, Infinite, Challenge, Any Stage, Sky Portal (see
+maacro/general/actions.py)."""
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
@@ -8,13 +9,20 @@ from PySide6.QtWidgets import (
 )
 
 from ..general.actions import ACTION_SCREENS, KEYS, KINDS, Action, actions_from_config
-from ..general.config import GeneralConfig
+from ..modes import MODES
 from . import theme
 
+
+def action_modes():
+    """The modes that run Actions: their config has an `actions` list."""
+    return [m for m in MODES if "actions" in getattr(m.config_class, "__dataclass_fields__", {})]
+
+
 INTRO = (
-    "Any Stage mode places units, upgrades them and waits. Replay / Next Stage after a match "
-    "is a switch on its Configs tab; add actions here for anything else (Return to lobby, "
-    "Play, a portal…): when a screen is up, click some text on it or press a key.\n"
+    "Story, Infinite, Challenge and Any Stage play the match and handle what comes after it "
+    "(their Configs tabs). Add actions here for anything else — a lobby route to the next "
+    "challenge, Play, a portal…: when a screen is up, click some text on it, press a key, or "
+    "hold one to walk.\n"
     "Text is matched like the screen reading on the Detection page shows it (\"Replay\", "
     "\"Next\", \"Return to lobby\"). Matchmaking and verification screens can't be used. "
     "Changes apply the next time you press Start."
@@ -120,12 +128,22 @@ class ActionsPage(QWidget):
         intro = QLabel(INTRO, objectName="Muted")
         intro.setWordWrap(True)
         layout.addWidget(intro)
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("Actions for", objectName="Muted"))
+        self.mode_box = QComboBox()
+        for mode in action_modes():
+            self.mode_box.addItem(mode.label, mode.key)
+        self.mode_box.setToolTip("Each mode keeps its own actions (e.g. Challenge: a lobby route "
+                                 "to the next challenge).")
+        self.mode_box.currentIndexChanged.connect(lambda _: self._load_mode())
+        mode_row.addWidget(self.mode_box)
+        mode_row.addStretch()
+        layout.addLayout(mode_row)
 
         self.rows_layout = QVBoxLayout()
         self.rows_layout.setSpacing(8)
         layout.addLayout(self.rows_layout)
-        self.empty = QLabel("No actions yet — Any Stage mode only places, upgrades and waits.",
-                            objectName="Muted")
+        self.empty = QLabel("No actions yet for this mode.", objectName="Muted")
         layout.addWidget(self.empty)
 
         buttons = QHBoxLayout()
@@ -145,8 +163,21 @@ class ActionsPage(QWidget):
         layout.addStretch()
 
         self.rows: list[ActionRow] = []
-        for action in actions_from_config(GeneralConfig.load().actions):
+        index = self.mode_box.findData("general")
+        self.mode_box.setCurrentIndex(max(0, index))
+        self._load_mode()
+
+    def _mode(self):
+        key = self.mode_box.currentData()
+        return next(m for m in action_modes() if m.key == key)
+
+    def _load_mode(self) -> None:
+        for row in list(self.rows):
+            self._remove(row)
+        for action in actions_from_config(self._mode().config_class.load().actions):
             self._add(action)
+        self.empty.setVisible(not self.rows)
+        self._message("", theme.MUTED)
 
     def _add(self, action: Action) -> None:
         row = ActionRow(Action(**vars(action)), self._remove)
@@ -166,7 +197,8 @@ class ActionsPage(QWidget):
         if problems:
             self._message("Not saved — " + "; ".join(problems), theme.LOSS)
             return
-        config = GeneralConfig.load()
+        mode = self._mode()
+        config = mode.config_class.load()
         config.actions = [vars(a) for a in actions]
         try:
             config.save()
@@ -174,7 +206,7 @@ class ActionsPage(QWidget):
             self._message(f"Couldn't save: {exc}", theme.LOSS)
             return
         on = sum(a.enabled for a in actions)
-        self._message(f"Saved {len(actions)} action(s) ({on} on) for Any Stage mode.", theme.WIN)
+        self._message(f"Saved {len(actions)} action(s) ({on} on) for {mode.label.split(' (')[0]}.", theme.WIN)
 
     def _message(self, text: str, color: str) -> None:
         self.message.setStyleSheet(f"color: {color};")

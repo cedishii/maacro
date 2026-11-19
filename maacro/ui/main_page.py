@@ -103,6 +103,8 @@ class MainPage(QWidget):
             thread = with_auto_profile(with_unit_plan(thread_class))(capture, detector, parent=self)
             thread.profile_mode = mode.key      # profiles/<mode>/, picked by map
             thread.names_read.connect(lambda found, key=mode.key: self._save_read_names(key, found))
+            if hasattr(thread, "stop_requested"):
+                thread.stop_requested.connect(self._mode_asked_to_stop)
             thread.status.connect(self.action_value.setText)
             thread.log.connect(self.log_panel.log)
             thread.finished.connect(self._on_macro_finished)
@@ -542,8 +544,10 @@ class MainPage(QWidget):
     def _check_rejoin(self) -> None:
         if self._relaunching:
             return
-        allow_stuck = not (self.mode == "general"
-                           and getattr(self.macro.settings, "after_match", "none") == "none")
+        # Modes that wait for the player on some screens (Any Stage with "leave
+        # it to me", Challenge in the lobby) aren't "stuck" there.
+        after_words = getattr(self.macro, "_after_words", None)
+        allow_stuck = not (self.mode == "challenge" or (after_words is not None and after_words() is None))
         action, why = self.rejoin_watch.check(self.app_settings, self.stats.running,
                                               bool(self.capture.hwnd), self.detector.tracker.screen,
                                               allow_stuck=allow_stuck)
@@ -584,6 +588,14 @@ class MainPage(QWidget):
                 self._relaunching = False
         threading.Thread(target=work, daemon=True).start()
         return True
+
+    def _mode_asked_to_stop(self, reason: str) -> None:
+        """A mode decided the session is over (e.g. Story: the last act is cleared)."""
+        if not self.stats.running:
+            return
+        self.log_panel.log(f"Stopping: {reason}.", "Warn")
+        self.stop_macro()
+        self.notifier.session_finished(reason, self.stats, self.mode_label())
 
     def _maybe_report(self) -> None:
         """Settings → Discord: a status post every N minutes while running."""

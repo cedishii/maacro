@@ -30,8 +30,9 @@ python -m venv .venv
 
 ## Features
 
-- Modes for **any stage** (story, legend, raids, challenges, portals — with Replay or
-  Next Stage after each match), **Summer Event**, **Infinity Castle** and **Sky Portal**.
+- Modes for **Story** (through the acts, or farm one), **Infinite** (Replay after each run),
+  **Challenge**, **any other stage** (legend, raids, portals), **Summer Event**,
+  **Infinity Castle** and **Sky Portal**.
 - Places and upgrades units by your per-unit settings, using circled placement zones per
   map (and walks to a better spot first on some maps).
 - Picks cards (Star Golem first, buffs over debuffs, the mildest debuff when all are red,
@@ -62,8 +63,12 @@ Pick the mode on the Main page (stop the macro to switch). Each mode has its own
 controller and its own settings tab on the Configs page; only one runs at a time.
 
 - **Summer Event** — the original macro: lobby → ring → matchmaking → match → back to the lobby.
-- **Any Stage** — for everything else (story, legend stages, raids, challenges, portals,
-  someone else's lobby). Start a stage yourself; MAACRO places, upgrades and waits. Set
+- **Story** — start the first act; a win → Next Stage, a defeat → Retry, or farm one act. After
+  the last act it replays it or stops.
+- **Infinite** — plays each run until the defeat that ends it, then Replay; logs the wave reached.
+- **Challenge** — plays the challenge, then Replay if offered, otherwise Return to lobby; lobby
+  Actions can walk to the next one.
+- **Any Stage** — for everything else (legend stages, raids, portals, someone else's lobby). Start a stage yourself; MAACRO places, upgrades and waits. Set
   *After the match* on its Configs tab to **Replay** (farm the stage) or **Next Stage**
   (go on through the acts), and it keeps going by itself. It never clicks Play or Return
   to lobby; the Actions page can add those.

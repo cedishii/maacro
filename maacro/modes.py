@@ -20,6 +20,8 @@ from .party import BEHAVIORS, SOLO
 from .summer_config import SummerConfig
 from .sky_portal.config import SkyPortalConfig
 from .sky_portal.controller import SkyPortalThread
+from .stage_modes import (ChallengeConfig, ChallengeThread, InfiniteConfig, InfiniteThread,
+                          StoryConfig, StoryThread)
 
 MODE_PATH = Path(__file__).resolve().parents[1] / "mode.json"
 
@@ -37,7 +39,12 @@ MODES = (
     Mode("summer", "Summer Event", SummerThread, SummerConfig),
     Mode("infinity_castle", "Infinity Castle", InfinityCastleThread, InfinityConfig),
     # Already leaves every choice to the player, so the Party Member role adds nothing.
-    Mode("general", "Any Stage (story, legend, raid, portal…)", GeneralThread, GeneralConfig,
+    Mode("story", "Story (acts, Next Stage / Retry)", StoryThread, StoryConfig, supports_party=False),
+    Mode("infinite", "Infinite (endless waves, Replay)", InfiniteThread, InfiniteConfig,
+         supports_party=False),
+    Mode("challenge", "Challenge (Replay or back to the lobby)", ChallengeThread, ChallengeConfig,
+         supports_party=False),
+    Mode("general", "Any Stage (legend, raid, portal…)", GeneralThread, GeneralConfig,
          supports_party=False),
     # Always a party member: waits for the leader and the vote, then plays.
     Mode("sky_portal", "Sky Portal (party member)", SkyPortalThread, SkyPortalConfig,

@@ -20,6 +20,7 @@ from ..infinity_castle.config import InfinityConfig
 from .. import profiles
 from ..summer_config import SummerConfig
 from ..sky_portal.config import SkyPortalConfig
+from ..stage_modes import ChallengeConfig, InfiniteConfig, StoryConfig
 from . import theme
 from .widgets import panel
 
@@ -536,6 +537,36 @@ class ConfigsPage(QWidget):
             "auto_vote_start": "Vote Yes on 'Vote start'",
             "fast_economy": "Fast economy: place and upgrade twice as often (money comes fast)",
         }, mode_key="infinity_castle"), "Infinity Castle")
+        stage_switches = {
+            "place_units": "Place units",
+            "upgrade_units": "Upgrade units to Max (unit manager, F)",
+            "use_map_zones": "Use saved map zones (and the walk some maps need); off = automatic spots, never moves",
+            "auto_vote_start": "Vote Yes on 'Vote start'",
+            "auto_card_pick": "Pick cards if a card vote shows up (off = wait)",
+        }
+        tabs.addTab(ModeSettings(StoryConfig, stage_switches, {
+            "story_progress": ("After the match", [
+                ("next", "Go through the acts — a win → Next Stage, a defeat → Retry the act"),
+                ("farm", "Farm this act — always Replay"),
+            ]),
+            "last_act": ("After the last act (a win with no Next Stage)", [
+                ("replay", "Replay it (keep farming the last act)"),
+                ("stop", "Stop the macro (and post a Discord summary)"),
+            ]),
+        }, mode_key="story"), "Story")
+        tabs.addTab(ModeSettings(InfiniteConfig, stage_switches, {
+            "after_defeat": ("After the defeat that ends a run", [
+                ("replay", "Replay (start a new run)"),
+                ("none", "Leave it to me"),
+            ]),
+        }, mode_key="infinite"), "Infinite")
+        tabs.addTab(ModeSettings(ChallengeConfig, stage_switches, {
+            "challenge_after": ("After the challenge", [
+                ("replay_or_lobby", "Replay if the game offers it, otherwise Return to lobby"),
+                ("lobby", "Always Return to lobby (then your lobby Actions, or you, join the next)"),
+                ("none", "Leave it to me"),
+            ]),
+        }, mode_key="challenge"), "Challenge")
         tabs.addTab(ModeSettings(GeneralConfig, {
             "place_units": "Place units",
             "upgrade_units": "Upgrade units to Max (unit manager, F)",

@@ -36,6 +36,7 @@ GAME_SCREENS = ("vote_start", "in_match", "unit_manager", "card_pick")
 # Buttons after a match, by the "After the match" setting (first found wins).
 REPLAY_WORDS = ("replay", "retry", "play again")
 NEXT_WORDS = ("next stage", "next level", "next act", "next room")
+LOBBY_WORDS = ("return to lobby",)
 AFTER_MATCH = {"replay": REPLAY_WORDS, "next": NEXT_WORDS + REPLAY_WORDS}
 AFTER_MATCH_EVERY = 20      # s between presses (a second press could cancel a vote)
 SPOT_AFTER_TRIES = 3        # presses without the button read → its usual spot
@@ -73,6 +74,21 @@ class GeneralThread(CardFirst, PlaceOnlyUnits, ScrollingUpgrades, MacroThread): 
     def _after_match(self) -> str:
         value = getattr(self.settings, "after_match", "none")
         return value if value in AFTER_MATCH else "none"
+
+    # --- after the match: hooks for the modes built on this one -----------
+    def _after_words(self) -> tuple[str, ...] | None:
+        """The buttons to press after this match, best first (None = leave it
+        to the player). Story / Infinite / Challenge decide this their way."""
+        after = self._after_match()
+        return None if after == "none" else AFTER_MATCH[after]
+
+    def _after_pressed(self, label: str, words: tuple[str, ...]) -> None:
+        """Called after a Replay / Next Stage / Return to lobby press."""
+
+    def _record_run(self, det) -> None:
+        if det is not None and getattr(det, "result", None) in ("win", "loss"):
+            self._last_result = det.result
+        super()._record_run(det)
 
     def _watch_map(self, det: Detection | None) -> None:
         # General's own zones (maps/general/), then Summer's for other maps.
@@ -145,7 +161,7 @@ class GeneralThread(CardFirst, PlaceOnlyUnits, ScrollingUpgrades, MacroThread): 
     def _on_end(self, hwnd: int) -> None:
         """Count the win/loss (for the totals and Discord); press Next only if
         "After the match" is set to Replay / Next Stage."""
-        if self._after_match() != "none":
+        if self._after_words() is not None:
             super()._on_end(hwnd)
             return
         det = self._fresh("end")
@@ -161,34 +177,38 @@ class GeneralThread(CardFirst, PlaceOnlyUnits, ScrollingUpgrades, MacroThread): 
             return
         if self._close_covering_manager(hwnd, det):
             return
-        after = self._after_match()
-        if after == "none":
+        words = self._after_words()
+        if words is None:
             self._wait("match over (Return to lobby / Replay is up to you)")
             return
         if not self._cooldown("after_match", AFTER_MATCH_EVERY):
             return
-        line = self._after_button(det, AFTER_MATCH[after])
+        line = self._after_button(det, words, allow_lobby=any(w in LOBBY_WORDS for w in words))
         if line is not None:
             self._after_tries += 1
             name = line.text.strip() or "Replay"
             self._say(f"Match over → pressing {name}")
             self._click_line(hwnd, line, name)
+            self._after_pressed(name, words)
             return
         self._after_tries += 1
-        spot = self._replay_spot(det)
+        replay = any(w in REPLAY_WORDS for w in words)
+        spot = self._replay_spot(det) if replay else self._return_spot(det)
         if spot is not None and self._after_tries > SPOT_AFTER_TRIES:
-            self._say("Match over → pressing Replay (button text not read — using its usual spot)")
+            name = "Replay" if replay else "Return to lobby"
+            self._say(f"Match over → pressing {name} (button text not read — using its usual spot)")
             inp.click(hwnd, *spot)
+            self._after_pressed(name, words)
             return
-        self._say("Match over — looking for the Replay / Next Stage button", log=False)
+        self._say("Match over — looking for the button to press next", log=False)
 
     @staticmethod
-    def _after_button(det: Detection, words):
+    def _after_button(det: Detection, words, allow_lobby: bool = False):
         """The first of `words` on screen: exact text first (in order), then a
-        close read. Never "Waiting for Players" (reads a lot like "replay") or
-        Return to lobby."""
-        lines = [l for l in det.lines
-                 if not any(w in _norm(l.text) for w in ("waiting", "player", "lobby"))]
+        close read. Never "Waiting for Players" (reads a lot like "replay"),
+        and Return to lobby only when `allow_lobby`."""
+        avoid = ("waiting", "player") if allow_lobby else ("waiting", "player", "lobby")
+        lines = [l for l in det.lines if not any(w in _norm(l.text) for w in avoid)]
         for word in words:
             for line in lines:
                 if _norm(word) in _norm(line.text):
