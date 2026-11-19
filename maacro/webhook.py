@@ -39,6 +39,7 @@ class WebhookConfig:
     screenshot: bool = True         # attach the end screen
     on_stuck: bool = True           # alert when MAACRO says it needs you
     mention: str = ""               # optional Discord user ID to ping on alerts
+    report_minutes: int = 0         # a status post (picture + results) this often while running; 0 = off
 
     @classmethod
     def load(cls, path: Path = WEBHOOK_PATH) -> "WebhookConfig":
@@ -230,6 +231,30 @@ class Notifier:
                     "embeds": [{"title": "🏁 Session finished", "description": description,
                                 "color": BLUE, "fields": fields, "footer": _footer(mode_label),
                                 "timestamp": datetime.now(timezone.utc).isoformat()}]})
+
+    def report(self, stats, mode_label: str, status: list[str], image: Path | None) -> None:
+        """The every-N-minutes status post: what it's doing, results, a picture.
+        `image` is a temporary file; it's deleted once sent."""
+        if not (self.config.valid and self.config.report_minutes):
+            if image is not None:
+                try:
+                    os.remove(image)
+                except OSError:
+                    pass
+            return
+        fields = [
+            {"name": "📊 Results", "value": f"✅ `{stats.wins}`  ❌ `{stats.losses}`  📈 `{stats.runs}` "
+                                           f"(`{stats.win_rate:.1f}%`)", "inline": False},
+            {"name": "⏱ Runtime", "value": f"`{_hms(stats.session_seconds)}`", "inline": True},
+        ]
+        if stats.pearls:
+            fields.append({"name": "🐚 Earned", "value": f"`{stats.pearls:,}`", "inline": True})
+        embed = {"title": "📷 Status", "description": "\n".join(status)[:1500], "color": BLUE,
+                 "fields": fields, "footer": _footer(mode_label),
+                 "timestamp": datetime.now(timezone.utc).isoformat()}
+        if image is not None:
+            embed["image"] = {"url": f"attachment://{image.name}"}
+        self._send({"username": "MAACRO", "embeds": [embed]}, image, delete_after=True)
 
     def rejoined(self, why: str, where: str) -> None:
         """A note when MAACRO reopened Roblox by itself (sent with stuck alerts' setting)."""

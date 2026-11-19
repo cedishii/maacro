@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 
 from .. import relaunch, remote
 from ..app_settings import HOTKEYS, AppSettings
+from ..goals import parse_time
 from ..webhook import WebhookConfig
 from . import theme
 from .widgets import panel
@@ -89,6 +90,11 @@ class SettingsPage(QWidget):
         self.stop_losses = _spin(0, 99, " in a row",
                                  tip="Stop when the setup keeps failing (e.g. 3 losses in a row).")
         form.addRow("Losses in a row", self.stop_losses)
+        self.stop_at = QLineEdit(placeholderText="e.g. 07:00 — empty = off")
+        self.stop_at.setFixedWidth(170)
+        self.stop_at.setToolTip("Stop at this time of day (24-hour clock). Started at 23:00 with "
+                                "07:00 → stops at 07:00 the next morning.")
+        form.addRow("Clock time", self.stop_at)
         box_layout.addLayout(form)
         self.close_at_goal = QCheckBox("Also close Roblox when a goal stops the macro")
         box_layout.addWidget(self.close_at_goal)
@@ -258,6 +264,13 @@ class SettingsPage(QWidget):
         self.on_stuck = QCheckBox("Alert when MAACRO is stuck or rejoins (at most every 5 min)")
         for widget in (self.on_run_end, self.screenshot, self.on_drop, self.on_stuck):
             box_layout.addWidget(widget)
+        report_row = QHBoxLayout()
+        report_row.addWidget(QLabel("Status post (picture + results) every"))
+        self.report_minutes = _spin(0, 24 * 60, " min", tip="While the macro runs. Off = never.")
+        self.report_minutes.setSingleStep(15)
+        report_row.addWidget(self.report_minutes)
+        report_row.addStretch()
+        box_layout.addLayout(report_row)
         row = QHBoxLayout()
         save = QPushButton("Save webhook", objectName="StartButton")
         save.clicked.connect(self.save)
@@ -284,6 +297,7 @@ class SettingsPage(QWidget):
         self.screenshot.setChecked(config.screenshot)
         self.on_drop.setChecked(config.on_drop)
         self.on_stuck.setChecked(config.on_stuck)
+        self.report_minutes.setValue(int(config.report_minutes or 0))
         return box
 
     def _performance_box(self) -> QFrame:
@@ -303,6 +317,7 @@ class SettingsPage(QWidget):
         self.stop_minutes.setValue(s.stop_after_minutes)
         self.stop_losses.setValue(s.stop_after_losses_in_row)
         self.close_at_goal.setChecked(s.close_roblox_at_goal)
+        self.stop_at.setText(s.stop_at)
         self.server_link.setText(s.server_link)
         self.rejoin.setChecked(s.rejoin)
         self.rejoin_closed.setValue(max(15, s.rejoin_closed_seconds))
@@ -323,6 +338,7 @@ class SettingsPage(QWidget):
             stop_after_runs=self.stop_runs.value(), stop_after_minutes=self.stop_minutes.value(),
             stop_after_losses_in_row=self.stop_losses.value(),
             close_roblox_at_goal=self.close_at_goal.isChecked(),
+            stop_at=self.stop_at.text().strip(),
             start_key=self.start_key.currentText(), stop_key=self.stop_key.currentText(),
             server_link=self.server_link.text().strip(), rejoin=self.rejoin.isChecked(),
             rejoin_closed_seconds=self.rejoin_closed.value(),
@@ -336,6 +352,9 @@ class SettingsPage(QWidget):
 
     def save_app_settings(self) -> None:
         settings = self.app_settings()
+        if settings.stop_at and parse_time(settings.stop_at) is None:
+            self._app_message("Stop time: use the 24-hour clock, like 07:00 or 23:30.", theme.LOSS)
+            return
         if settings.start_key == settings.stop_key:
             self._app_message("Start and Stop need different keys.", theme.LOSS)
             return
@@ -388,7 +407,8 @@ class SettingsPage(QWidget):
         return WebhookConfig(url=self.url.text().strip(), on_run_end=self.on_run_end.isChecked(),
                              screenshot=self.screenshot.isChecked(), on_stuck=self.on_stuck.isChecked(),
                              on_drop=self.on_drop.isChecked(),
-                             mention=self.mention.text().strip())
+                             mention=self.mention.text().strip(),
+                             report_minutes=self.report_minutes.value())
 
     def save(self) -> None:
         config = self._config()

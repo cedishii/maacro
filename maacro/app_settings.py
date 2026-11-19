@@ -26,6 +26,7 @@ class AppSettings:
     stop_after_runs: int = 0
     stop_after_minutes: int = 0
     stop_after_losses_in_row: int = 0
+    stop_at: str = ""                       # "07:00": stop at this time of day ("" = off)
     close_roblox_at_goal: bool = False      # also close Roblox when a goal stops the macro
 
     # Hotkeys (work while Roblox is in front).

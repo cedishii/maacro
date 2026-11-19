@@ -5,6 +5,7 @@ import collections
 import tempfile
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
@@ -23,7 +24,7 @@ from ..remote import RemoteControl, help_text
 from ..capture import CaptureThread, window_state
 from ..control import input as inp
 from ..detector import DetectorThread
-from ..goals import goal_reached, goal_text
+from ..goals import goal_reached, goal_text, stop_time
 from ..history import hms, load_runs, summarize
 from ..card_strategy import STRATEGIES
 from ..summer_config import SummerConfig
@@ -448,6 +449,12 @@ class MainPage(QWidget):
                                "Session Results or change the goal in Settings first.", "Warn")
             return
         self.rejoin_watch.reset()
+        self._started_at = datetime.now()
+        self._reported_at = time.monotonic()
+        stop = stop_time(self.app_settings.stop_at, self._started_at)
+        if stop is not None:
+            tomorrow = " tomorrow" if stop.date() > self._started_at.date() else ""
+            self.log_panel.log(f"Stopping at {stop:%H:%M}{tomorrow} (Settings → Session goals).")
         self.run_setup_check(log_all=False)
         self.stats.start()
         self.mode_box.setEnabled(False)
@@ -521,7 +528,7 @@ class MainPage(QWidget):
         if not self.stats.running:
             return
         reason = goal_reached(self.app_settings, self.stats.runs, self.stats.session_seconds,
-                              self.stats.losses_in_row)
+                              self.stats.losses_in_row, started=getattr(self, "_started_at", None))
         if not reason:
             return
         self.log_panel.log(f"Session goal reached: {reason} — stopping.", "Warn")
@@ -577,6 +584,27 @@ class MainPage(QWidget):
                 self._relaunching = False
         threading.Thread(target=work, daemon=True).start()
         return True
+
+    def _maybe_report(self) -> None:
+        """Settings → Discord: a status post every N minutes while running."""
+        minutes = self.notifier.config.report_minutes
+        if not (minutes and self.stats.running and self.notifier.config.valid):
+            return
+        if time.monotonic() - getattr(self, "_reported_at", 0.0) < minutes * 60:
+            return
+        self._reported_at = time.monotonic()
+        image = self.capture.latest_qimage() or getattr(self, "_last_image", None)
+        path = None
+        if image is not None:
+            path = Path(tempfile.gettempdir()) / f"maacro_report_{time.time_ns()}.jpg"
+            if not image.save(str(path), "JPG", 85):
+                path = None
+        status = [f"Screen: {self.screen_value.text()} · Doing: {self.action_value.text()}",
+                  f"Map: {self.map_value.text()} · Wave: {self.wave_value.text()}"]
+        goal = goal_text(self.app_settings, self.stats.runs)
+        if goal != "None":
+            status.append(f"Goal: {goal}")
+        self.notifier.report(self.stats, self.mode_label(), status, path)
 
     def _save_read_names(self, mode_key: str, found: dict) -> None:
         """Keep names read off the hotbar in the mode's setup (empty ones only)."""
@@ -747,8 +775,9 @@ class MainPage(QWidget):
         self.time_value.setText(self.stats.session_time_text())
         if hasattr(self, "app_settings") and hasattr(self, "goal_value"):
             self.goal_value.setText(goal_text(self.app_settings, self.stats.runs))
-            if self.app_settings.stop_after_minutes:
+            if self.app_settings.stop_after_minutes or self.app_settings.stop_at:
                 self._check_goals()
+            self._maybe_report()
 
     def _on_frame(self, image: QImage) -> None:
         self._last_image = image            # for drop posts

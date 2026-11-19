@@ -3,6 +3,10 @@
 ## Unreleased
 
 **New**
+- **Stop at a clock time** (Settings → Session goals): e.g. 07:00 — started at 23:00, it stops
+  at 07:00 the next morning.
+- **Discord status post every N minutes** (Settings → Discord updates): a picture of the game
+  plus screen, map, wave, results, runtime and goal, while the macro runs.
 - **Unit names read off the hotbar:** a placed unit with no name (needed to find its Upg button
   for upgrade priority, limits, farm units…) gets it from the name under its hotbar card at
   the start of a match — several pictures vote, the base name is kept ("Elyssia (Abyssal)" →
