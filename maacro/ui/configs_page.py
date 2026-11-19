@@ -9,7 +9,7 @@ the macro already uses, so nothing about how a mode plays changes.
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
-    QApplication, QButtonGroup, QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
+    QApplication, QButtonGroup, QCheckBox, QComboBox, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QLabel,
     QLineEdit, QMessageBox, QPushButton, QRadioButton, QScrollArea, QSpinBox, QTabWidget,
     QVBoxLayout, QWidget,
 )
@@ -218,7 +218,7 @@ class ModeSettings(QWidget):
 
     def __init__(self, config_class: type, switches: dict[str, str],
                  choices: dict[str, tuple[str, list[tuple[str, str]]]] | None = None,
-                 mode_key: str = "", parent=None):
+                 mode_key: str = "", lobby: dict | None = None, parent=None):
         super().__init__(parent)
         self.config_class = config_class
         self.mode_key = mode_key
@@ -256,6 +256,10 @@ class ModeSettings(QWidget):
                 box_layout.addWidget(button)
                 self.choices[name][value] = button
         layout.addWidget(box)
+        # Starting from the lobby (Story / Infinite / Challenge): a panel of its own.
+        self.lobby_fields: dict[str, QWidget] = {}
+        if lobby:
+            layout.addWidget(self._lobby_box(lobby))
 
         actions = QHBoxLayout()
         save = QPushButton("Save", objectName="StartButton")
@@ -277,6 +281,82 @@ class ModeSettings(QWidget):
             layout.addWidget(self._profiles_box())
         layout.addStretch()
         self.show_config(config_class.load())
+
+    # --- starting from the lobby -----------------------------------------------
+    def _lobby_box(self, lobby: dict) -> QFrame:
+        """lobby: {"tile": "Play Area" / "Challenges", "stage": True for the
+        map / act / difficulty fields, "acts": include the Act / Difficulty boxes}."""
+        box, box_layout = panel("Start from the lobby")
+        steps = (f"Areas → {lobby['tile']} → walk into a door"
+                 + (" → the map → " + ("Act / difficulty" if lobby.get("acts") else "Infinite") + " → Select"
+                    if lobby.get("stage") else "") + " → Start (if shown) → play.")
+        box_layout.addWidget(QLabel(f"In the lobby, MAACRO goes there itself: {steps} If a step fails it "
+                                    "presses Cancel and tries again a bit later.", objectName="Muted",
+                                    wordWrap=True))
+        check = QCheckBox("Start from the lobby by itself")
+        box_layout.addWidget(check)
+        self.lobby_fields["lobby_start"] = check
+        form = QFormLayout()
+        if lobby.get("stage"):
+            world = QLineEdit(placeholderText="As in the Select World list, e.g. Walled City")
+            world.setToolTip("The map's name as the Select World list shows it (the list is scrolled "
+                             "until it's found).")
+            form.addRow("Map", world)
+            self.lobby_fields["world"] = world
+        if lobby.get("acts"):
+            act = QComboBox()
+            for n in "123456":
+                act.addItem(f"Act {n}", n)
+            form.addRow("Act", act)
+            self.lobby_fields["act"] = act
+            difficulty = QComboBox()
+            difficulty.addItem("Normal", "normal")
+            difficulty.addItem("Hard", "hard")
+            form.addRow("Difficulty", difficulty)
+            self.lobby_fields["difficulty"] = difficulty
+        walk = QLineEdit(placeholderText="w+d 2")
+        walk.setToolTip("How to walk from where the teleport puts you into a door: keys held together "
+                        "joined by +, then seconds; steps separated by commas (e.g. 'w+d 2' or "
+                        "'w 1, d 0.5'). It stops early once the world window shows.")
+        form.addRow("Walk into the door", walk)
+        self.lobby_fields["lobby_walk"] = walk
+        box_layout.addLayout(form)
+        return box
+
+    def _show_lobby(self, config) -> None:
+        for name, widget in self.lobby_fields.items():
+            value = getattr(config, name, None)
+            if isinstance(widget, QCheckBox):
+                widget.setChecked(bool(value))
+            elif isinstance(widget, QComboBox):
+                widget.setCurrentIndex(max(0, widget.findData(value)))
+            else:
+                widget.setText(str(value or ""))
+
+    def _lobby_problem(self) -> str:
+        if not self.lobby_fields:
+            return ""
+        from ..lobby_start import parse_route
+        walk = self.lobby_fields["lobby_walk"].text().strip() or "w+d 2"
+        try:
+            parse_route(walk)
+        except ValueError as exc:
+            return f"Walk into the door: {exc}."
+        on = self.lobby_fields["lobby_start"].isChecked()
+        world = self.lobby_fields.get("world")
+        if on and world is not None and not world.text().strip():
+            return "Start from the lobby: type the map's name (as in the Select World list)."
+        return ""
+
+    def _apply_lobby(self, config) -> None:
+        for name, widget in self.lobby_fields.items():
+            if isinstance(widget, QCheckBox):
+                setattr(config, name, widget.isChecked())
+            elif isinstance(widget, QComboBox):
+                setattr(config, name, widget.currentData())
+            else:
+                text = widget.text().strip()
+                setattr(config, name, text or ("w+d 2" if name == "lobby_walk" else ""))
 
     # --- names off the hotbar ---------------------------------------------
     capture = None          # set by ConfigsPage
@@ -447,6 +527,7 @@ class ModeSettings(QWidget):
         for name, buttons in self.choices.items():
             current = getattr(config, name, None)
             (buttons.get(current) or next(iter(buttons.values()))).setChecked(True)
+        self._show_lobby(config)
 
     def showEvent(self, event) -> None:
         # Pick-one settings can also change elsewhere (Cards on the Main page):
@@ -464,6 +545,10 @@ class ModeSettings(QWidget):
         order, upgrades = config_lists(cards)
         if not order:
             self._message("Enable at least one unit.", theme.LOSS)
+            return False
+        problem = self._lobby_problem()
+        if problem:
+            self._message(problem, theme.LOSS)
             return False
         config = self.config_class.load()
         config.placement_order, config.upgrade_priority = order, upgrades
@@ -486,6 +571,7 @@ class ModeSettings(QWidget):
             setattr(config, name, box.isChecked())
         for name, buttons in self.choices.items():
             setattr(config, name, next((v for v, b in buttons.items() if b.isChecked()), next(iter(buttons))))
+        self._apply_lobby(config)
         try:
             config.save()
         except OSError as exc:
@@ -553,20 +639,20 @@ class ConfigsPage(QWidget):
                 ("replay", "Replay it (keep farming the last act)"),
                 ("stop", "Stop the macro (and post a Discord summary)"),
             ]),
-        }, mode_key="story"), "Story")
+        }, mode_key="story", lobby={"tile": "Play Area", "stage": True, "acts": True}), "Story")
         tabs.addTab(ModeSettings(InfiniteConfig, stage_switches, {
             "after_defeat": ("After the defeat that ends a run", [
                 ("replay", "Replay (start a new run)"),
                 ("none", "Leave it to me"),
             ]),
-        }, mode_key="infinite"), "Infinite")
+        }, mode_key="infinite", lobby={"tile": "Play Area", "stage": True}), "Infinite")
         tabs.addTab(ModeSettings(ChallengeConfig, stage_switches, {
             "challenge_after": ("After the challenge", [
                 ("replay_or_lobby", "Replay if the game offers it, otherwise Return to lobby"),
                 ("lobby", "Always Return to lobby (then your lobby Actions, or you, join the next)"),
                 ("none", "Leave it to me"),
             ]),
-        }, mode_key="challenge"), "Challenge")
+        }, mode_key="challenge", lobby={"tile": "Challenges"}), "Challenge")
         tabs.addTab(ModeSettings(GeneralConfig, {
             "place_units": "Place units",
             "upgrade_units": "Upgrade units to Max (unit manager, F)",

@@ -27,6 +27,7 @@ from PySide6.QtCore import Signal
 from .config import MacroConfig
 from .general.config import GeneralConfig
 from .general.controller import LOBBY_WORDS, NEXT_WORDS, REPLAY_WORDS, GeneralThread
+from .lobby_start import LobbyStarter, StagePicker
 
 ROOT = Path(__file__).resolve().parents[1]
 STORY_CONFIG_PATH = ROOT / "story_config.json"
@@ -55,6 +56,12 @@ class StoryConfig(GeneralConfig):
     story_progress: str = "next"
     # After the last act (a win with no Next Stage): "replay" it or "stop".
     last_act: str = "replay"
+    # Start from the lobby by itself: Areas → Play Area → walk in → map → act.
+    lobby_start: bool = False
+    lobby_walk: str = "w+d 2"
+    world: str = ""                 # as in the Select World list, e.g. "Walled City"
+    act: str = "1"                  # "1" … "6"
+    difficulty: str = "normal"      # "normal" / "hard"
 
     @classmethod
     def load(cls, path: Path = STORY_CONFIG_PATH) -> "StoryConfig":
@@ -69,6 +76,10 @@ class InfiniteConfig(GeneralConfig):
     auto_vote_start: bool = True
     # After the defeat that ends a run: "replay" or "none" (leave it to you).
     after_defeat: str = "replay"
+    # Start from the lobby by itself: Areas → Play Area → walk in → map → Infinite.
+    lobby_start: bool = False
+    lobby_walk: str = "w+d 2"
+    world: str = ""
 
     @classmethod
     def load(cls, path: Path = INFINITE_CONFIG_PATH) -> "InfiniteConfig":
@@ -84,6 +95,9 @@ class ChallengeConfig(GeneralConfig):
     # "replay_or_lobby": Replay if there's one, else Return to lobby;
     # "lobby": always Return to lobby; "none": leave it to you.
     challenge_after: str = "replay_or_lobby"
+    # Start from the lobby by itself: Areas → Challenges → walk into the door.
+    lobby_start: bool = False
+    lobby_walk: str = "w+d 2"
 
     @classmethod
     def load(cls, path: Path = CHALLENGE_CONFIG_PATH) -> "ChallengeConfig":
@@ -99,9 +113,17 @@ def act_number(map_name: str | None) -> int | None:
     return int(match.group(1)) if match else None
 
 
-class StoryThread(GeneralThread):
+class StoryThread(StagePicker, GeneralThread):
     INTRO = ("Story mode — plays the act; a win → Next Stage, a defeat → Retry (or farm one act: "
-             "Replay). Start the first act yourself.")
+             "Replay). Start the first act yourself, or switch on 'Start from the lobby'.")
+    AREA_TILE, LOBBY_KIND = "play area", "story"
+
+    def _stage_choice(self) -> tuple[str, str, str]:
+        cfg = self.settings
+        act = str(getattr(cfg, "act", "1"))
+        difficulty = str(getattr(cfg, "difficulty", "normal")).lower()
+        return (str(getattr(cfg, "world", "")), act if act in "123456" and len(act) == 1 else "1",
+                difficulty if difficulty in ("normal", "hard") else "normal")
     # The mode asks the Main page to stop it (e.g. the last act is cleared).
     stop_requested = Signal(str)
 
@@ -151,9 +173,13 @@ class StoryThread(GeneralThread):
         self._no_next_reads = 0
 
 
-class InfiniteThread(GeneralThread):
+class InfiniteThread(StagePicker, GeneralThread):
     INTRO = ("Infinite mode — plays until the defeat that ends the run, then Replay. Start the "
-             "first run yourself.")
+             "first run yourself, or switch on 'Start from the lobby'.")
+    AREA_TILE, LOBBY_KIND = "play area", "infinite"
+
+    def _stage_choice(self) -> tuple[str, str, str]:
+        return str(getattr(self.settings, "world", "")), "infinite", "hard"
 
     def run(self) -> None:
         self._best_wave = 0
@@ -173,7 +199,9 @@ class InfiniteThread(GeneralThread):
             self.log.emit(f"Infinite: reached wave {wave} (best this session: {best}){note}", "Info")
 
 
-class ChallengeThread(GeneralThread):
+class ChallengeThread(LobbyStarter, GeneralThread):
+    AREA_TILE, LOBBY_KIND = "challenges", "challenge"
+
     INTRO = ("Challenge mode — plays the challenge, then Replay if the game offers it, otherwise "
              "Return to lobby (lobby Actions can walk you to the next one).")
 
@@ -186,6 +214,9 @@ class ChallengeThread(GeneralThread):
         return REPLAY_WORDS + LOBBY_WORDS
 
     def _on_lobby(self, hwnd: int) -> None:
+        if self._lobby_ready():
+            LobbyStarter._on_lobby(self, hwnd)
+            return
         if getattr(self, "_actions", None) is not None and any(
                 a.screen == "lobby" for a in self._actions.actions):
             self._wait("in the lobby — running your lobby Actions to the next challenge")

@@ -3,6 +3,14 @@
 ## Unreleased
 
 **New**
+- **Start from the lobby by itself** (Story, Infinite, Challenge → Configs → *Start from the
+  lobby*): Areas → Play Area / Challenges → walk into a door (W+D 2 s by default, editable;
+  stops early once Select World shows) → Story / Infinite: scroll the Select World list to the
+  map → Act N (or Infinite) → Normal / Hard → Select → Start if shown. Text is read on zoomed
+  crops with the buttons' usual places as a fallback (the Areas button on the right edge, the
+  tiles from the window's title). A failed step presses Cancel and retries later (30 s; 5 min
+  for challenges); three failures in a row raise a "check the game" alert. With auto-rejoin,
+  a disconnect now ends back in the stage too.
 - **Story, Infinite and Challenge modes** (built on Any Stage's tested match play, each with its
   own Configs tab, Actions list and profiles):
   - *Story*: a win → Next Stage (on through the acts), a defeat → Retry; or farm one act

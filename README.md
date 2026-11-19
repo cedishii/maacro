@@ -66,8 +66,11 @@ controller and its own settings tab on the Configs page; only one runs at a time
 - **Story** — start the first act; a win → Next Stage, a defeat → Retry, or farm one act. After
   the last act it replays it or stops.
 - **Infinite** — plays each run until the defeat that ends it, then Replay; logs the wave reached.
-- **Challenge** — plays the challenge, then Replay if offered, otherwise Return to lobby; lobby
-  Actions can walk to the next one.
+- **Challenge** — plays the challenge, then Replay if offered, otherwise Return to lobby.
+
+Story, Infinite and Challenge can also **start from the lobby by itself** (their Configs tab):
+Areas → Play Area / Challenges → walk into a door → (map → act / Infinite → difficulty →
+Select) → play.
 - **Any Stage** — for everything else (legend stages, raids, portals, someone else's lobby). Start a stage yourself; MAACRO places, upgrades and waits. Set
   *After the match* on its Configs tab to **Replay** (farm the stage) or **Next Stage**
   (go on through the acts), and it keeps going by itself. It never clicks Play or Return
