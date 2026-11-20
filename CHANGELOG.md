@@ -39,6 +39,10 @@
   with no card text read at all.
 
 **New**
+- **MAACRO notices when it was updated.** Stopping and starting (F3 / F1) keeps running the code
+  that was loaded when MAACRO opened, so an update did nothing until MAACRO was closed and opened
+  again. Now Start says so and offers **Restart now** (the new copy waits for the old one to close;
+  settings are kept) or starting the old version anyway.
 - **Record your play, MAACRO plays it back** (Settings → *Your own play*, off until you switch it
   on). A **Record** button sits under Start / Stop. Recording starts when the match starts (the
   vote is over) and stops when you press Return to lobby; it reads your real keyboard and mouse

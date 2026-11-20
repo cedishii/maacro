@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from .. import night_guard, relaunch, setup_check
+from .. import night_guard, relaunch, self_update, setup_check
 from ..loss_replay import LossReplay, latest_replay
 from ..play_record import (InputRecorder, find_recording, label, loading_title,
                            map_parts, new_recording, recording_key, with_play_replay)
@@ -485,6 +485,9 @@ class MainPage(QWidget):
     # --- macro control -------------------------------------------------
     def start_macro(self) -> None:
         if self.stats.running or any(t.isRunning() for t in self.macros.values()):
+            return
+        if not getattr(self, "_update_answered", False) and self_update.code_changed():
+            self._ask_to_restart()
             return
         self.macro.settings = BY_KEY[self.mode].config_class.load()
         self.macro.auto_profiles = AppSettings.load().auto_profiles
@@ -1015,6 +1018,44 @@ class MainPage(QWidget):
         box.show()
         box.raise_()
         box.activateWindow()
+
+    def _ask_to_restart(self) -> None:
+        """MAACRO's files were updated since it was opened: F3 / F1 would keep
+        running the old code. Offer to restart (without blocking anything)."""
+        self.log_panel.log("MAACRO was updated since you opened it — Start/Stop keeps the old version "
+                           "running. Restart MAACRO to use the update.", "Warn")
+        self._bring_to_front()
+        box = QMessageBox(QMessageBox.Icon.Information, "MAACRO was updated",
+                          "MAACRO's files changed since you opened it. Starting and stopping keeps the old "
+                          "version running.\n\nRestart MAACRO now to use the update? (Your settings are "
+                          "kept.)", QMessageBox.StandardButton.NoButton, self)
+        restart = box.addButton("Restart now", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Start the old version", QMessageBox.ButtonRole.RejectRole)
+        box.setWindowModality(Qt.WindowModality.NonModal)
+
+        def answered(_button) -> None:
+            self._update_answered = True
+            if box.clickedButton() is restart:
+                self.restart_app()
+            else:
+                self.start_macro()
+        box.buttonClicked.connect(answered)
+        self._update_prompt = box
+        box.show()
+        box.raise_()
+        box.activateWindow()
+
+    def restart_app(self) -> None:
+        """Start a new MAACRO (it waits for this one to close), then close."""
+        from PySide6.QtCore import QProcess
+        program, args = self_update.restart_command()
+        program = program.replace("python.exe", "pythonw.exe") if program.lower().endswith("python.exe") else program
+        result = QProcess.startDetached(program, args)
+        started = result[0] if isinstance(result, tuple) else bool(result)
+        if not started:
+            self.log_panel.log("Couldn't restart MAACRO by itself — please close it and open it again.", "Error")
+            return
+        self.window().close()
 
     def _bring_to_front(self) -> None:
         window = self.window()

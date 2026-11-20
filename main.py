@@ -73,6 +73,12 @@ def log_crashes() -> None:
 
 def main() -> int:
     log_crashes()
+    if "--wait-for" in sys.argv:            # restarted after an update: let the old copy close first
+        try:
+            from maacro.self_update import wait_for_exit
+            wait_for_exit(int(sys.argv[sys.argv.index("--wait-for") + 1]))
+        except (IndexError, ValueError):
+            pass
     if already_running():
         return 0
     # Show MAACRO's own icon on the taskbar instead of Python's.
