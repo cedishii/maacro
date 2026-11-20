@@ -150,6 +150,34 @@ def turn_camera(dx: int, dy: int = 0, chunk: int = 8, pause: float = 0.002) -> N
         _send(_mouse(MOUSEEVENTF_RIGHTUP))
 
 
+_BUTTON_FLAGS = {("left", True): MOUSEEVENTF_LEFTDOWN, ("left", False): MOUSEEVENTF_LEFTUP,
+                 ("right", True): MOUSEEVENTF_RIGHTDOWN, ("right", False): MOUSEEVENTF_RIGHTUP}
+KEYEVENTF_EXTENDEDKEY = 0x0001
+
+
+def mouse_button(button: str, down: bool) -> None:
+    """Press or let go of the left / right mouse button where the mouse is."""
+    _send(_mouse(_BUTTON_FLAGS[(button, down)]))
+
+
+def move_by(dx: int, dy: int) -> None:
+    """Move the mouse by (dx, dy) counts, like a real mouse (turns the camera
+    while the right button is held)."""
+    _send(_mouse(MOUSEEVENTF_MOVE, int(dx), int(dy)))
+
+
+def wheel(delta: int) -> None:
+    """The mouse wheel where the mouse is (+120 = one notch away from you)."""
+    _send(INPUT(type=INPUT_MOUSE, u=_INPUTUNION(mi=MOUSEINPUT(0, 0, int(delta) & 0xFFFFFFFF,
+                                                              MOUSEEVENTF_WHEEL, 0, 0))))
+
+
+def scan_key(scan: int, extended: bool, down: bool) -> None:
+    """Any key by its scan code (arrows and the like are 'extended')."""
+    flags = KEYEVENTF_SCANCODE | (0 if down else KEYEVENTF_KEYUP) | (KEYEVENTF_EXTENDEDKEY if extended else 0)
+    _send(INPUT(type=INPUT_KEYBOARD, u=_INPUTUNION(ki=KEYBDINPUT(0, int(scan), flags, 0, 0))))
+
+
 def precise_sleep(seconds: float) -> None:
     """Sleep to within about a millisecond (plain sleep can overshoot): sleep
     most of it, then spin the last moment."""

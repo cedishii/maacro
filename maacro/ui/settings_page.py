@@ -6,7 +6,8 @@ import threading
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+    QCheckBox, QComboBox, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QListWidgetItem, QPushButton,
     QScrollArea, QSpinBox, QVBoxLayout, QWidget,
 )
 
@@ -65,6 +66,7 @@ class SettingsPage(QWidget):
         layout.addWidget(self._goals_box())
         layout.addWidget(self._roblox_box())
         layout.addWidget(self._overnight_box())
+        layout.addWidget(self._own_play_box())
         layout.addWidget(self._hotkeys_box())
         layout.addWidget(self._profiles_box())
         layout.addWidget(self._discord_box())
@@ -176,6 +178,57 @@ class SettingsPage(QWidget):
         form.addRow("Fresh Roblox every", self.fresh_roblox)
         box_layout.addLayout(form)
         return box
+
+    def _own_play_box(self) -> QFrame:
+        box, box_layout = panel("Your own play")
+        box_layout.addWidget(QLabel(
+            "Record how you play a map once; MAACRO then plays that map the same way (your keys, clicks, "
+            "wheel and camera turns, matched to the waves, so a faster or slower run stays in step). "
+            "Card votes stay with your card strategy.", objectName="Muted", wordWrap=True))
+        self.learn_my_play = QCheckBox("Record my play — shows the Record button, and asks to record a map "
+                                       "that isn't recorded yet when it's loading")
+        box_layout.addWidget(self.learn_my_play)
+        self.replay_my_play = QCheckBox("Play recorded maps my way (instead of MAACRO's own placing and upgrading)")
+        box_layout.addWidget(self.replay_my_play)
+        self.recordings_list = QListWidget()
+        self.recordings_list.setMaximumHeight(130)
+        box_layout.addWidget(self.recordings_list)
+        row = QHBoxLayout()
+        row.addStretch()
+        delete = QPushButton("Delete recording")
+        delete.setToolTip("Forget the selected map's recording (MAACRO asks to record it again next time).")
+        delete.clicked.connect(self._delete_recording)
+        row.addWidget(delete)
+        box_layout.addLayout(row)
+        self._show_recordings()
+        return box
+
+    def _show_recordings(self) -> None:
+        from ..play_record import all_recordings
+        self.recordings_list.clear()
+        recordings = all_recordings()
+        for recording in recordings:
+            result = {"win": " · won", "loss": " · lost"}.get(recording.result, "")
+            item = QListWidgetItem(f"{recording.label} — {len(recording.events)} actions, up to wave "
+                                   f"{recording.waves}{result} · {recording.created}")
+            item.setData(Qt.ItemDataRole.UserRole, recording.key)
+            self.recordings_list.addItem(item)
+        if not recordings:
+            self.recordings_list.addItem("No maps recorded yet.")
+
+    def _delete_recording(self) -> None:
+        from ..play_record import delete_recording
+        item = self.recordings_list.currentItem()
+        key = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        if not key:
+            return
+        delete_recording(key)
+        self._show_recordings()
+        self._app_message("Recording deleted.", theme.WIN)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._show_recordings()
 
     def _hotkeys_box(self) -> QFrame:
         box, box_layout = panel("Hotkeys")
@@ -364,6 +417,8 @@ class SettingsPage(QWidget):
         self.keep_awake.setChecked(s.keep_awake)
         self.resume_after_crash.setChecked(s.resume_after_crash)
         self.loss_replay.setChecked(s.loss_replay)
+        self.learn_my_play.setChecked(s.learn_my_play)
+        self.replay_my_play.setChecked(s.replay_my_play)
         self.start_at.setText(s.start_at)
         self.fresh_roblox.setValue(s.fresh_roblox_hours)
         self.start_with_windows.setChecked(night_guard.starts_with_windows())
@@ -391,6 +446,8 @@ class SettingsPage(QWidget):
             start_at=self.start_at.text().strip(),
             fresh_roblox_hours=self.fresh_roblox.value(),
             loss_replay=self.loss_replay.isChecked(),
+            learn_my_play=self.learn_my_play.isChecked(),
+            replay_my_play=self.replay_my_play.isChecked(),
             remote_enabled=self.remote_enabled.isChecked(),
             remote_token=self.remote_token.text().strip(),
             remote_channel=self.remote_channel.text().strip(),

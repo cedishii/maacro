@@ -50,6 +50,8 @@ python -m venv .venv
 - **Overnight:** keeps the PC awake, carries on after a crash or a Windows restart, opens with
   Windows, starts at a clock time, and restarts Roblox every few hours between matches.
 - **Loss replays:** a short video of the minutes before each defeat (`!replay` on Discord).
+- **Your own play:** record how you play a map once (Record button, or say yes when a new map
+  is loading) and MAACRO plays that map the same way, in step with the waves.
 - **Profiles and share codes:** keep a setup per stage or team, switch in one click, and
   share a setup as one line of text (`MAACRO1:…`).
 - **Per-unit plans:** upgrade a unit only up to N, place or upgrade it only from wave N.
@@ -111,6 +113,8 @@ to get past it, then a beep after 10 minutes) and click Reconnect after a discon
 - `maacro/profiles.py` — saved setups and share codes; `maacro/auto_profile.py` — picked by map
 - `maacro/remote.py` — Discord remote control (bot commands)
 - `maacro/lobby_start.py` — starting a stage from the lobby; `maacro/walk_record.py` — recording the walk
+- `maacro/play_record.py` — recording your play per map and playing it back;
+  `maacro/raw_input.py` — reading the real keyboard and mouse (read only)
 - `maacro/night_guard.py` — overnight: keep awake, resume, start with Windows, fresh Roblox;
   `maacro/loss_replay.py` — loss replay videos
 - `maacro/unit_plan.py` — per-unit upgrade limits and wave timing; `maacro/setup_check.py` — setup check

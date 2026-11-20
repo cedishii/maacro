@@ -50,6 +50,10 @@ class AppSettings:
     fresh_roblox_hours: int = 0             # restart Roblox every N hours between matches (0 = off)
     loss_replay: bool = True                # save a short video of the minutes before each defeat
 
+    # Your own play (play_record.py): record how you play a map, MAACRO plays it back.
+    learn_my_play: bool = False             # Record button + "record this new map?" on loading
+    replay_my_play: bool = True             # on a recorded map, play the recording
+
     # Discord remote control (a bot of your own; see remote.py).
     remote_enabled: bool = False
     remote_token: str = ""

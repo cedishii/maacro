@@ -18,13 +18,12 @@ most of the walk switches sprinting on, so it's played back at the same speed.
 """
 from __future__ import annotations
 
-import ctypes
 import time
-from ctypes import wintypes
 
 from PySide6.QtCore import QThread, Signal
 
 from .control import input as inp
+from .raw_input import MOUSE, RawInput
 
 WALK_VKS = {"w": 0x57, "a": 0x41, "s": 0x53, "d": 0x44, "space": 0x20}
 KEY_ORDER = tuple(WALK_VKS)
@@ -118,92 +117,15 @@ def held_keys() -> tuple[frozenset, bool]:
 
 
 # --- raw mouse input (read only) ---------------------------------------------
-class _RAWINPUTDEVICE(ctypes.Structure):
-    _fields_ = [("usUsagePage", wintypes.USHORT), ("usUsage", wintypes.USHORT),
-                ("dwFlags", wintypes.DWORD), ("hwndTarget", wintypes.HWND)]
-
-
-class _RAWINPUTHEADER(ctypes.Structure):
-    _fields_ = [("dwType", wintypes.DWORD), ("dwSize", wintypes.DWORD),
-                ("hDevice", wintypes.HANDLE), ("wParam", wintypes.WPARAM)]
-
-
-class _RAWMOUSE(ctypes.Structure):
-    _fields_ = [("usFlags", wintypes.USHORT), ("_pad", wintypes.USHORT),
-                ("usButtonFlags", wintypes.USHORT), ("usButtonData", wintypes.USHORT),
-                ("ulRawButtons", wintypes.ULONG), ("lLastX", wintypes.LONG), ("lLastY", wintypes.LONG),
-                ("ulExtraInformation", wintypes.ULONG)]
-
-
-class _RAWINPUT(ctypes.Structure):
-    _fields_ = [("header", _RAWINPUTHEADER), ("mouse", _RAWMOUSE)]
-
-
-class RawMouse:
-    """The mouse's own horizontal movement, from a hidden message-only window
-    in the calling thread (works while Roblox is in front and the cursor is
-    locked). take() → counts moved since the last call."""
-    WM_INPUT, PM_REMOVE, RID_INPUT, RIDEV_INPUTSINK, RIDEV_REMOVE = 0x00FF, 1, 0x10000003, 0x100, 0x1
+class RawMouse(RawInput):
+    """The mouse's own horizontal movement (works while Roblox is in front and
+    the cursor is locked). take() → counts moved since the last call."""
 
     def __init__(self):
-        self.hwnd = None
-
-    def open(self) -> bool:
-        try:
-            user32 = ctypes.WinDLL("user32", use_last_error=True)
-            user32.CreateWindowExW.restype = wintypes.HWND
-            user32.CreateWindowExW.argtypes = [wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR,
-                                               wintypes.DWORD, ctypes.c_int, ctypes.c_int, ctypes.c_int,
-                                               ctypes.c_int, wintypes.HWND, wintypes.HMENU,
-                                               wintypes.HINSTANCE, wintypes.LPVOID]
-            user32.GetRawInputData.argtypes = [wintypes.HANDLE, wintypes.UINT, wintypes.LPVOID,
-                                               ctypes.POINTER(wintypes.UINT), wintypes.UINT]
-            user32.PeekMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT,
-                                            wintypes.UINT, wintypes.UINT]
-            self._user32 = user32
-            self.hwnd = user32.CreateWindowExW(0, "Message", None, 0, 0, 0, 0, 0,
-                                               wintypes.HWND(-3), None, None, None)
-            if not self.hwnd:
-                return False
-            device = _RAWINPUTDEVICE(1, 2, self.RIDEV_INPUTSINK, self.hwnd)
-            if not user32.RegisterRawInputDevices(ctypes.byref(device), 1, ctypes.sizeof(device)):
-                self.close()
-                return False
-            return True
-        except (AttributeError, OSError):
-            self.hwnd = None
-            return False
+        super().__init__(devices=(MOUSE,))
 
     def take(self) -> int:
-        if not self.hwnd:
-            return 0
-        user32, moved = self._user32, 0
-        msg = wintypes.MSG()
-        header = ctypes.sizeof(_RAWINPUTHEADER)
-        while user32.PeekMessageW(ctypes.byref(msg), self.hwnd, self.WM_INPUT, self.WM_INPUT, self.PM_REMOVE):
-            size = wintypes.UINT(0)
-            handle = wintypes.HANDLE(msg.lParam)
-            user32.GetRawInputData(handle, self.RID_INPUT, None, ctypes.byref(size), header)
-            if not size.value or size.value > 256:
-                continue
-            buffer = ctypes.create_string_buffer(size.value)
-            if user32.GetRawInputData(handle, self.RID_INPUT, buffer, ctypes.byref(size), header) <= 0:
-                continue
-            data = ctypes.cast(buffer, ctypes.POINTER(_RAWINPUT)).contents
-            if data.header.dwType == 0 and not data.mouse.usFlags & 1:     # a mouse, relative move
-                moved += data.mouse.lLastX
-        return moved
-
-    def close(self) -> None:
-        if not self.hwnd:
-            return
-        try:
-            device = _RAWINPUTDEVICE(1, 2, self.RIDEV_REMOVE, None)
-            self._user32.RegisterRawInputDevices(ctypes.byref(device), 1, ctypes.sizeof(device))
-            self._user32.DestroyWindow(self.hwnd)
-        except OSError:
-            pass
-        self.hwnd = None
+        return sum(event[1] for event in self.events() if event[0] == "move")
 
 
 class WalkRecorder(QThread):

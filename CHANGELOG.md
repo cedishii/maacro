@@ -3,6 +3,18 @@
 ## Unreleased
 
 **New**
+- **Record your play, MAACRO plays it back** (Settings → *Your own play*, off until you switch it
+  on). A **Record** button sits under Start / Stop. Recording starts when the match starts (the
+  vote is over) and stops when you press Return to lobby; it reads your real keyboard and mouse
+  (keys, clicks and where they were, the wheel, camera turns — read only, MAACRO's own clicks
+  left out) and stamps each action with its wave and the seconds into that wave. On a recorded map
+  the mode then plays your recording during the match instead of its own placing and upgrading;
+  each action waits for its wave, so a faster or slower run stays in step. Card votes stay with
+  the card strategy; lobby, results and rejoin work as before.
+  - When a map that isn't recorded yet is loading ("Travelling to… Fiend City / Summer Hunt"),
+    MAACRO comes to the front and asks whether to record it; a recorded map is just played.
+  - Pressing Record on a recorded map asks "redo the recording?" first; a lost match asks whether
+    to keep it. Recordings are listed (and can be deleted) in Settings.
 - **Accurate walks and turns.** Walks are timed to the millisecond (keys used to be let go up to
   0.15 s late) and can do more than hold keys: `turn 240` / `turn -150` turns the camera the way
   a hand does (right button held, the mouse moved by exact counts in small even steps, so the

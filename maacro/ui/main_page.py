@@ -11,12 +11,14 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSplitter,
+    QApplication, QComboBox, QFrame, QMessageBox, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSplitter,
     QVBoxLayout, QWidget,
 )
 
 from .. import night_guard, relaunch, setup_check
 from ..loss_replay import LossReplay, latest_replay
+from ..play_record import (InputRecorder, find_recording, label, loading_title,
+                           map_parts, new_recording, recording_key, with_play_replay)
 from .. import runs as runs_module
 from ..app_settings import AppSettings, hotkey_vk
 from ..auto_profile import with_auto_profile
@@ -62,6 +64,17 @@ class MainPage(QWidget):
         self._start_at_fired = None
         self._resume_pending = False
         self._session_ending = False
+        # Your own play: recording state and the map read off the loading screen.
+        self._rec_state = None          # None / "armed" / "recording"
+        self._rec_title = ""
+        self._rec_result = ""
+        self._recorder = None
+        self._record_prompt = None
+        self._match_title = ""
+        self._asked_maps: set[str] = set()
+        self._last_screen = "unknown"
+        self._title_until = 0.0
+        self._title_timer = QTimer(self, interval=400, timeout=self._poll_loading_title)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -107,7 +120,8 @@ class MainPage(QWidget):
         self.macros = {}
         for mode in MODES:
             thread_class = with_party(mode.thread_class) if mode.supports_party else mode.thread_class
-            thread = with_auto_profile(with_unit_plan(thread_class))(capture, detector, parent=self)
+            thread = with_play_replay(with_auto_profile(with_unit_plan(thread_class)))(
+                capture, detector, parent=self)
             thread.profile_mode = mode.key      # profiles/<mode>/, picked by map
             thread.names_read.connect(lambda found, key=mode.key: self._save_read_names(key, found))
             if hasattr(thread, "stop_requested"):
@@ -229,6 +243,13 @@ class MainPage(QWidget):
         buttons.addWidget(self.start_button)
         buttons.addWidget(self.stop_button)
         box_layout.addLayout(buttons)
+        self.record_button = QPushButton("Record")
+        self.record_button.setToolTip(
+            "Record how you play this map: it starts when the match starts (the vote is over) and stops "
+            "when you press Return to lobby. MAACRO then plays this map your way (Settings → Your own play).")
+        self.record_button.clicked.connect(self._record_clicked)
+        self.record_button.hide()
+        box_layout.addWidget(self.record_button)
         col.addWidget(box)
 
         # Roblox window
@@ -556,6 +577,9 @@ class MainPage(QWidget):
         self.remote.configure(s.remote_enabled, s.remote_token, s.remote_channel, s.remote_user)
         for thread in self.macros.values():
             thread.auto_profiles = s.auto_profiles
+            thread.replay_enabled = s.learn_my_play and s.replay_my_play
+        if hasattr(self, "record_button"):
+            self.record_button.setVisible(s.learn_my_play or self._rec_state is not None)
         self._refresh_stats()
         self.refresh_lifetime()
 
@@ -846,6 +870,182 @@ class MainPage(QWidget):
         eta = self._eta()
         return f"{goal} — {eta}" if eta else goal
 
+    # --- your own play: record a map, play it back -----------------------
+    MATCH_SCREENS = ("in_match", "card_pick", "unit_manager", "end")
+    LEAVE_SCREENS = ("loading", "lobby", "match_found", "join_matchmaking", "captcha")
+
+    def _record_clicked(self) -> None:
+        if self._rec_state == "recording":
+            self._stop_recording(by_hand=True)
+            return
+        if self._rec_state == "armed":
+            self._set_rec_state(None)
+            self.log_panel.log("Recording cancelled.")
+            return
+        title = self._match_title or self.detector.tracker.map_name or ""
+        name, kind = map_parts(title)
+        existing = find_recording(recording_key(name, kind), title) if title else None
+        if existing is not None:
+            answer = QMessageBox.question(
+                self, "Record again?",
+                f"{existing.label} is already recorded ({existing.created}).\n\n"
+                "Are you sure you want to redo the recording?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        self._arm_recording(title)
+
+    def _arm_recording(self, title: str) -> None:
+        self._rec_title = title
+        self._rec_result = ""
+        self._set_rec_state("armed")
+        where = label(*map_parts(title)) if title else "this map"
+        if self.detector.tracker.screen in self.MATCH_SCREENS:
+            self.log_panel.log(f"Recording armed for {where}: it starts with the next match (when the "
+                               "vote is over) and stops when you press Return to lobby.")
+        else:
+            self.log_panel.log(f"Recording armed for {where}: it starts when the match starts and stops "
+                               "when you press Return to lobby. Play it your way!")
+
+    def _set_rec_state(self, state) -> None:
+        self._rec_state = state
+        text = {None: "Record", "armed": "Armed — cancel", "recording": "● Recording — stop"}[state]
+        self.record_button.setText(text)
+        self.record_button.setProperty("recording", state == "recording")
+        self.record_button.setStyleSheet(f"color: {theme.LOSS};" if state == "recording" else
+                                         f"color: {theme.WARN};" if state == "armed" else "")
+        for thread in self.macros.values():
+            thread.recording_now = state == "recording"
+
+    def _start_recording(self) -> None:
+        self._recorder = InputRecorder(lambda: self.capture.hwnd or 0, lambda: self.detector.tracker.screen,
+                                       lambda: self.detector.tracker.wave, parent=self)
+        self._recorder.failed.connect(lambda text: self.log_panel.log(text, "Error"))
+        self._recorder.start()
+        self._set_rec_state("recording")
+        self.log_panel.log("● Recording your play — it stops when you press Return to lobby.", "Warn")
+
+    def _stop_recording(self, by_hand: bool = False) -> None:
+        recorder = self._recorder
+        self._recorder = None
+        self._set_rec_state(None)
+        if recorder is None:
+            return
+        recorder.requestInterruption()
+        recorder.wait(2000)
+        events = [e for e in recorder.events]
+        if not any(e.get("type") in ("key", "button") for e in events):
+            self.log_panel.log("Recording stopped — nothing was recorded.", "Warn")
+            return
+        title = self._rec_title or self._match_title or self.detector.tracker.map_name or ""
+        if self._rec_result == "loss":
+            answer = QMessageBox.question(
+                self, "Keep this recording?",
+                "That match was lost. Keep the recording anyway? (MAACRO would play it the same way.)",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+            if answer != QMessageBox.StandardButton.Yes:
+                self.log_panel.log("Recording thrown away (a defeat).")
+                return
+        recording = new_recording(title, self.mode, events, self._rec_result, recorder.last_wave)
+        try:
+            recording.save()
+        except OSError as exc:
+            self.log_panel.log(f"Couldn't save the recording: {exc}", "Error")
+            return
+        self.log_panel.log(f"Recording saved: {recording.label} — {len(events)} actions up to wave "
+                           f"{recording.waves}. MAACRO plays it the next time this map comes up.")
+
+    def _poll_loading_title(self) -> None:
+        """While the loading screen is up: read "Travelling to… <map>"."""
+        if self.detector.tracker.screen != "loading" or time.monotonic() > self._title_until:
+            self._title_timer.stop()
+            return
+        det = self.detector.latest
+        _, frame = self.capture.latest_frame()
+        if det is None or frame is None:
+            return
+        title = loading_title(det.lines, frame.shape[1], frame.shape[0])
+        name, kind = map_parts(title)
+        if not name:
+            return
+        self._title_timer.stop()
+        self._on_map_title(title)
+
+    def _on_map_title(self, title: str) -> None:
+        name, kind = map_parts(title)
+        key = recording_key(name, kind)
+        self._match_title = title
+        for thread in self.macros.values():
+            thread.replay_key = key
+        self.log_panel.log(f"Next map: {label(name, kind)}.")
+        if not self.app_settings.learn_my_play or self._rec_state is not None:
+            return
+        if find_recording(key) is not None:
+            if self.app_settings.replay_my_play:
+                self.log_panel.log(f"{label(name, kind)} is recorded — MAACRO plays it your way.")
+            return
+        if key in self._asked_maps:
+            return
+        self._asked_maps.add(key)
+        self._ask_to_record(title)
+
+    def _ask_to_record(self, title: str) -> None:
+        """Bring MAACRO to the front and ask (without blocking anything)."""
+        where = label(*map_parts(title))
+        self._bring_to_front()
+        box = QMessageBox(QMessageBox.Icon.Question, "Record this map?",
+                          f"New map: {where}\n\nRecord how you play it? MAACRO starts recording when the "
+                          "match starts and stops when you press Return to lobby. After that it plays this "
+                          "map the way you did.", QMessageBox.StandardButton.NoButton, self)
+        record = box.addButton("Record it", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Not now", QMessageBox.ButtonRole.RejectRole)
+        box.setWindowModality(Qt.WindowModality.NonModal)
+
+        def answered(_button) -> None:
+            if box.clickedButton() is record and self._rec_state is None:
+                self._arm_recording(title)
+            hwnd = self.capture.hwnd
+            if hwnd:
+                try:
+                    inp.focus(hwnd)         # back to the game
+                except Exception:
+                    pass
+        box.buttonClicked.connect(answered)
+        self._record_prompt = box
+        box.show()
+        box.raise_()
+        box.activateWindow()
+
+    def _bring_to_front(self) -> None:
+        window = self.window()
+        if window.isMinimized():
+            window.showNormal()
+        window.raise_()
+        window.activateWindow()
+        try:
+            inp.focus(int(window.winId()))
+        except Exception:
+            pass
+
+    def _recording_event(self, kind: str, value) -> None:
+        if kind == "result" and self._rec_state == "recording":
+            self._rec_result = str(value)
+        if kind != "screen":
+            return
+        previous, self._last_screen = self._last_screen, value
+        if value == "loading" and self.app_settings.learn_my_play:
+            self._title_until = time.monotonic() + 25
+            self._title_timer.start()
+        if value == "lobby":
+            self._match_title = ""
+            for thread in self.macros.values():
+                thread.replay_key = ""
+        if self._rec_state == "armed" and value in ("in_match", "unit_manager") \
+                and previous not in self.MATCH_SCREENS:
+            self._start_recording()
+        elif self._rec_state == "recording" and value in self.LEAVE_SCREENS:
+            self._stop_recording()
+
     def _session_line(self) -> str:
         s = self.stats
         rate = f" ({s.win_rate:.0f}%)" if s.runs else ""
@@ -888,6 +1088,9 @@ class MainPage(QWidget):
 
     def shutdown(self) -> None:
         self.remote.stop()
+        if self._recorder is not None:
+            self._recorder.requestInterruption()
+            self._recorder.wait(2000)
         if not self._session_ending:
             night_guard.clear_running()     # closed on purpose: nothing to resume
         night_guard.keep_awake(False)
@@ -959,6 +1162,7 @@ class MainPage(QWidget):
             self.log_panel.log("Roblox window not found.", "Warn")
 
     def _on_game_event(self, kind: str, value: object) -> None:
+        self._recording_event(kind, value)
         if kind == "screen":
             label = SCREEN_LABELS.get(value, value)
             self.screen_value.setText(label)
