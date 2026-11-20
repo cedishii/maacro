@@ -53,6 +53,28 @@ MODES = (
 BY_KEY = {mode.key: mode for mode in MODES}
 
 
+# Short names for picking a mode by text (Discord's !mode).
+NICKNAMES = {"summer": "summer", "event": "summer", "castle": "infinity_castle", "ic": "infinity_castle",
+             "infinity": "infinity_castle", "story": "story", "acts": "story", "infinite": "infinite",
+             "inf": "infinite", "endless": "infinite", "challenge": "challenge", "challenges": "challenge",
+             "any": "general", "general": "general", "anystage": "general", "legend": "general",
+             "raid": "general", "portal": "general", "sky": "sky_portal", "skyportal": "sky_portal"}
+
+
+def find_mode(text: str) -> str | None:
+    """"inf" → "infinite", "Infinity Castle" → "infinity_castle"; None if unclear."""
+    word = "".join(ch for ch in (text or "").lower() if ch.isalnum())
+    if not word:
+        return None
+    if word in NICKNAMES:
+        return NICKNAMES[word]
+    for mode in MODES:
+        if word in (mode.key.replace("_", ""), "".join(ch for ch in mode.label.lower() if ch.isalnum())):
+            return mode.key
+    starts = {key for nick, key in NICKNAMES.items() if nick.startswith(word) and len(word) >= 3}
+    return starts.pop() if len(starts) == 1 else None
+
+
 def _read() -> dict:
     try:
         data = json.loads(MODE_PATH.read_text(encoding="utf-8"))

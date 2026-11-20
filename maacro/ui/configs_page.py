@@ -318,10 +318,53 @@ class ModeSettings(QWidget):
         walk.setToolTip("How to walk from where the teleport puts you into a door: keys held together "
                         "joined by +, then seconds; steps separated by commas (e.g. 'w+d 2' or "
                         "'w 1, d 0.5'). It stops early once the world window shows.")
-        form.addRow("Walk into the door", walk)
+        walk_row = QHBoxLayout()
+        walk_row.addWidget(walk, 1)
+        self.record_walk_button = QPushButton("Record")
+        self.record_walk_button.setToolTip(
+            "Walk it once yourself: press Record, switch to Roblox (teleported in front of the doors) "
+            "and walk into the door. MAACRO only reads the keys you press and writes the walk here "
+            "(it stops 1.5 s after you let go; Esc cancels).")
+        self.record_walk_button.clicked.connect(self._record_walk)
+        walk_row.addWidget(self.record_walk_button)
+        form.addRow("Walk into the door", walk_row)
         self.lobby_fields["lobby_walk"] = walk
+        sprint = QCheckBox("Sprint (hold Shift while walking)")
+        sprint.setToolTip("Set by Record from whether you held Shift, so the walk plays back at "
+                          "the speed it was recorded.")
+        form.addRow("", sprint)
+        self.lobby_fields["walk_sprint"] = sprint
         box_layout.addLayout(form)
+        self.walk_note = QLabel("", objectName="Muted", wordWrap=True)
+        self.walk_note.hide()
+        box_layout.addWidget(self.walk_note)
         return box
+
+    def _record_walk(self) -> None:
+        from ..walk_record import WalkRecorder
+        recorder = getattr(self, "_walk_recorder", None)
+        if recorder is not None and recorder.isRunning():
+            recorder.requestInterruption()
+            return
+        recorder = WalkRecorder(parent=self)
+        self._walk_recorder = recorder
+        recorder.status.connect(self._walk_status)
+        recorder.done.connect(self._walk_recorded)
+        recorder.failed.connect(lambda text: self._walk_status(text, theme.WARN))
+        recorder.finished.connect(lambda: self.record_walk_button.setText("Record"))
+        self.record_walk_button.setText("Stop")
+        recorder.start()
+
+    def _walk_status(self, text: str, color: str | None = None) -> None:
+        self.walk_note.setText(text)
+        self.walk_note.setStyleSheet(f"color: {color};" if color else "")
+        self.walk_note.show()
+
+    def _walk_recorded(self, route: str, sprint: bool) -> None:
+        self.lobby_fields["lobby_walk"].setText(route)
+        self.lobby_fields["walk_sprint"].setChecked(sprint)
+        self._walk_status(f"Recorded: {route}" + (" (sprinting)" if sprint else "")
+                          + " — press Save to keep it.", theme.WIN)
 
     def _show_lobby(self, config) -> None:
         for name, widget in self.lobby_fields.items():

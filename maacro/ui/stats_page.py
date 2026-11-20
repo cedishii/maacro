@@ -1,5 +1,6 @@
 """The Stats page: every run ever recorded (runs/runs.csv) — totals, today,
-streaks, results per map, per stage kind and per day, and the latest runs."""
+streaks, insights, a runs-per-day chart, results per map, per stage kind and
+per day, and the latest runs."""
 from __future__ import annotations
 
 import os
@@ -11,8 +12,9 @@ from PySide6.QtWidgets import (
     QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from ..history import RUNS_CSV, Group, Summary, hms, load_runs, summarize
+from ..history import RUNS_CSV, Group, Summary, daily, hms, insights, load_runs, summarize
 from . import theme
+from .charts import DayChart
 from .widgets import panel
 
 
@@ -104,6 +106,20 @@ class StatsPage(QWidget):
 
         row = QHBoxLayout()
         row.setSpacing(12)
+        self.insights_box, box_layout = panel("Insights")
+        self.insights_label = QLabel("", wordWrap=True)
+        self.insights_label.setTextFormat(Qt.TextFormat.PlainText)
+        box_layout.addWidget(self.insights_label)
+        box_layout.addStretch()
+        row.addWidget(self.insights_box, 2)
+        box, box_layout = panel("Last 14 days")
+        self.day_chart = DayChart()
+        box_layout.addWidget(self.day_chart)
+        row.addWidget(box, 3)
+        layout.addLayout(row)
+
+        row = QHBoxLayout()
+        row.setSpacing(12)
         box, box_layout = panel("By map")
         self.map_table = _table(["Map", "Runs", "Wins", "Win %", "Avg time"])
         box_layout.addWidget(self.map_table)
@@ -143,7 +159,17 @@ class StatsPage(QWidget):
         self.refresh()
 
     def refresh(self) -> None:
-        self.show_summary(summarize(load_runs()))
+        runs = load_runs()
+        summary = summarize(runs)
+        self.show_summary(summary)
+        self.show_trends(summary, runs)
+
+    def show_trends(self, s: Summary, runs) -> None:
+        tips = insights(s, runs)
+        self.insights_label.setText("\n\n".join(f"• {tip}" for tip in tips) if tips else
+                                    "Findings show up here as runs pile up (best map per hour, "
+                                    "card styles compared, where the losses are…).")
+        self.day_chart.set_days(daily(runs))
 
     def show_summary(self, s: Summary) -> None:
         total = s.total

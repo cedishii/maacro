@@ -3,6 +3,18 @@
 ## Unreleased
 
 **New**
+- **Record the walk into the door** (Configs → *Start from the lobby* → Record): walk it once
+  yourself in Roblox; MAACRO only reads the keys you hold (like the hotkeys) and writes the walk
+  ("w+d 1.8, w 0.4"), with Sprint on if you held Shift. Fingers not lifting together are folded
+  away, pauses dropped.
+- **A picture of every failed lobby step** in `logs/lobby/` (the newest 20), named after what
+  failed, so a step that misses in the game can be fixed from what MAACRO saw.
+- **Time to goal** on the Main page and in Discord status: "38 runs left · ≈ 5 h (done ≈ 21:40)",
+  from this session's pace (the gaps between matches included); the soonest goal wins.
+- **Stats: Insights and a 14-day chart** — best map for pearls per hour, card styles compared,
+  where most losses are, the slowest map, this week against last; wins and losses per day.
+- **Discord `!mode` and `!goal`:** `!mode story` switches mode (and starts it again if it was
+  running), `!mode` lists them; `!goal 50` stops after 50 runs this session.
 - **Start from the lobby by itself** (Story, Infinite, Challenge → Configs → *Start from the
   lobby*): Areas → Play Area / Challenges → walk into a door (W+D 2 s by default, editable;
   stops early once Select World shows) → Story / Infinite: scroll the Select World list to the
@@ -157,6 +169,8 @@
   (e.g. 3/3 for Phoenix).
 
 **Fixed**
+- Pearls per hour counted the pearls of runs whose stage time wasn't read, so a map could look
+  far better than it is.
 - The "Starting…" box has properly rounded corners (the window around it is see-through).
 - **Opens smoothly:** a "Starting…" box is up in ~0.3 s while MAACRO loads (was 1.5 s of
   nothing); the full window shows at ~1.0 s (was ~1.5 s). The sidebar symbols cost Windows a

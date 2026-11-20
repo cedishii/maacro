@@ -152,6 +152,7 @@ class Group:
     losses: int = 0
     seconds: list[int] = field(default_factory=list)
     pearls: int = 0
+    timed_pearls: int = 0       # pearls of the runs with a stage time (for per hour)
 
     @property
     def runs(self) -> int:
@@ -168,8 +169,9 @@ class Group:
 
     @property
     def pearls_per_hour(self) -> float:
+        """Over the runs whose stage time was read (pearls of untimed runs left out)."""
         played = sum(self.seconds)
-        return self.pearls / (played / 3600) if played else 0.0
+        return self.timed_pearls / (played / 3600) if played else 0.0
 
     @property
     def avg_seconds(self) -> int | None:
@@ -184,6 +186,8 @@ class Group:
             self.seconds.append(run.seconds)
         if run.pearls:
             self.pearls += run.pearls
+            if run.seconds:
+                self.timed_pearls += run.pearls
 
 
 @dataclass
@@ -262,3 +266,54 @@ def hms(seconds: int | None) -> str:
     h, rest = divmod(int(seconds), 3600)
     m, s = divmod(rest, 60)
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+def daily(runs: list[Run], days: int = 14, today: date | None = None) -> list[tuple[date, int, int]]:
+    """(day, wins, losses) for the last `days` days, oldest first, days without
+    runs included."""
+    today = today or date.today()
+    counts: dict[date, list[int]] = {}
+    for run in runs:
+        counts.setdefault(run.time.date(), [0, 0])[0 if run.result == "win" else 1] += 1
+    out = []
+    for back in range(days - 1, -1, -1):
+        day = date.fromordinal(today.toordinal() - back)
+        wins, losses = counts.get(day, (0, 0))
+        out.append((day, wins, losses))
+    return out
+
+
+def insights(s: Summary, runs: list[Run], now: datetime | None = None) -> list[str]:
+    """A few plain findings from the history (only the ones the data backs up)."""
+    tips: list[str] = []
+    paying = [g for g in s.by_map if len(g.seconds) >= 5 and g.timed_pearls]
+    if len(paying) >= 2:
+        best = max(paying, key=lambda g: g.pearls_per_hour)
+        tips.append(f"Most pearls per hour: {best.name} — {best.pearls_per_hour:,.0f} an hour of stage "
+                    f"time over {len(best.seconds)} runs.")
+    styles = sorted((g for g in s.by_cards if g.runs >= 3), key=lambda g: -g.pearls_per_run)
+    if len(styles) >= 2 and styles[1].pearls_per_run > 0:
+        a, b = styles[0], styles[1]
+        more = (a.pearls_per_run / b.pearls_per_run - 1) * 100
+        if more >= 1:
+            tips.append(f"{a.name} cards earn {more:.0f}% more pearls per run than {b.name} "
+                        f"({a.win_rate:.0f}% vs {b.win_rate:.0f}% won).")
+    if s.total.losses >= 3:
+        worst = max(s.by_map, key=lambda g: (g.losses, -g.win_rate))
+        if worst.losses >= 2 and worst.losses / s.total.losses >= 0.3:
+            tips.append(f"{worst.losses} of your {s.total.losses} losses were on {worst.name} "
+                        f"({worst.win_rate:.0f}% won there) — a stronger setup or a profile for that "
+                        "map may help.")
+    timed = [g for g in s.by_map if g.runs >= 3 and g.avg_seconds]
+    if len(timed) >= 3 and s.total.avg_seconds:
+        slow = max(timed, key=lambda g: g.avg_seconds)
+        if slow.avg_seconds > s.total.avg_seconds * 1.2:
+            tips.append(f"Slowest map: {slow.name} — {hms(slow.avg_seconds)} a run vs "
+                        f"{hms(s.total.avg_seconds)} on average.")
+    now = now or datetime.now()
+    week = sum(1 for r in runs if 0 <= (now - r.time).days < 7)
+    before = sum(1 for r in runs if 7 <= (now - r.time).days < 14)
+    if week and before:
+        change = (week / before - 1) * 100
+        tips.append(f"Last 7 days: {week} runs ({'+' if change >= 0 else ''}{change:.0f}% on the week before).")
+    return tips

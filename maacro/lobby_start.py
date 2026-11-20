@@ -15,13 +15,16 @@ The way in, from the player's screenshots (update 21):
 Text is read on zoomed crops (the full picture reads "Areas" as "A-eas" or not
 at all), matched loosely, and where it still can't be read the button's usual
 place is used (the Areas button on the right edge; the area tiles from the
-window's title). If a step fails, Cancel is pressed when it shows and the next
-try waits a while (FAIL_WAIT), so a changed lobby can't make it loop fast.
+window's title). If a step fails, the picture MAACRO saw is saved
+(logs/lobby/, the newest KEEP_SHOTS) so the step can be fixed, Cancel is
+pressed when it shows, and the next try waits a while (FAIL_WAIT), so a
+changed lobby can't make it loop fast.
 """
 from __future__ import annotations
 
 import re
 import time
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -39,6 +42,8 @@ TILE_FROM_TITLE = {"challenges": (-0.15, 0.93), "play area": (0.53, 0.56)}
 WAIT_FOR_MATCH = 90      # s after the last step before the try counts as failed
 FAIL_WAIT = {"story": 30, "infinite": 30, "challenge": 300}   # s before trying again after a failure
 SCROLL_TRIES = 12        # scrolls of a list looking for the map / act
+SHOTS_DIR = Path(__file__).resolve().parents[1] / "logs" / "lobby"
+KEEP_SHOTS = 20
 _DIGITS = str.maketrans({"l": "1", "i": "1", "o": "0", "s": "5"})
 
 
@@ -181,9 +186,29 @@ class LobbyStarter:
         level = "Error" if self._lobby_fails >= 3 else "Warn"
         extra = " — please check the game" if self._lobby_fails >= 3 else ""
         self.log.emit(f"Lobby: {why} (try {self._lobby_fails}); trying again in {wait} s{extra}.", level)
+        shot = self._save_failure(why)
+        if shot is not None:
+            self.log.emit(f"Lobby: what MAACRO saw is saved as logs/lobby/{shot.name}", "Info")
         cancel = find_word(self._read(), "cancel", exact=True)
         if cancel is not None:
             self._click(self._hwnd_now(), cancel, "Cancel")
+
+    def _save_failure(self, why: str) -> Path | None:
+        """The current picture → logs/lobby/<time>_<why>.png (the newest KEEP_SHOTS kept)."""
+        try:
+            _, frame = self.capture.latest_frame()
+            if frame is None:
+                return None
+            SHOTS_DIR.mkdir(parents=True, exist_ok=True)
+            slug = re.sub(r"[^a-z0-9]+", "_", why.lower()).strip("_")[:40] or "failed"
+            path = SHOTS_DIR / f"{time.strftime('%Y%m%d_%H%M%S')}_{slug}.png"
+            if not cv2.imwrite(str(path), frame[..., :3]):
+                return None
+            for old in sorted(SHOTS_DIR.glob("*.png"))[:-KEEP_SHOTS]:
+                old.unlink(missing_ok=True)
+            return path
+        except (OSError, cv2.error):
+            return None
 
     def _hwnd_now(self) -> int:
         return self.capture.hwnd or 0

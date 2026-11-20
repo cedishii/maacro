@@ -62,3 +62,35 @@ def _duration(seconds: int) -> str:
     if h and m:
         return f"{h} h {m} min"
     return f"{h} h" if h else f"{m} min"
+
+
+def time_left(settings, runs: int, seconds: int, now: datetime | None = None,
+              started: datetime | None = None) -> tuple[int, str] | None:
+    """(seconds, why) until the soonest goal ends the session, or None with no
+    goal (or no pace yet for a runs goal). A runs goal uses this session's
+    pace: time so far ÷ runs so far, the gaps between matches included."""
+    now = now or datetime.now()
+    found: list[tuple[int, str]] = []
+    goal = getattr(settings, "stop_after_runs", 0)
+    if goal and runs < goal and runs > 0 and seconds > 0:
+        left = goal - runs
+        found.append((int(seconds / runs * left), f"{left} run{'s' if left != 1 else ''} left"))
+    minutes = getattr(settings, "stop_after_minutes", 0)
+    if minutes and seconds < minutes * 60:
+        found.append((minutes * 60 - seconds, f"{_duration(minutes * 60)} session"))
+    at = stop_time(getattr(settings, "stop_at", ""), started) if started else None
+    if at is not None and now < at:
+        found.append((int((at - now).total_seconds()), f"stop at {at:%H:%M}"))
+    return min(found) if found else None
+
+
+def eta_text(settings, runs: int, seconds: int, now: datetime | None = None,
+             started: datetime | None = None) -> str:
+    """"12 runs left · ≈ 5 h 10 min (done ≈ 21:40)" — "" with nothing to tell."""
+    left = time_left(settings, runs, seconds, now, started)
+    if left is None:
+        return ""
+    secs, why = left
+    done = (now or datetime.now()) + timedelta(seconds=secs)
+    length = _duration(max(60, secs))
+    return f"{why} · ≈ {length} (done ≈ {done:%H:%M})"

@@ -9,6 +9,8 @@ reads that channel every few seconds and answers commands from you only:
     !ss            a screenshot of the game
     !start, !stop  start / stop the macro
     !rejoin        close Roblox and open it again on your server link
+    !mode story    switch mode (stops, switches, starts again if it was running)
+    !goal 50       stop after 50 runs this session (!goal 0 = no runs goal)
     !help          this list
 
 How it works: the channel is read with Discord's REST API (no extra library;
@@ -42,8 +44,12 @@ COMMANDS = {
     "start": "start the macro",
     "stop": "stop the macro",
     "rejoin": "close Roblox and open it again on your server link",
+    "mode": "switch mode, e.g. `!mode story` (`!mode` alone lists them)",
+    "goal": "stop after N runs this session, e.g. `!goal 50` (`!goal 0` = none)",
     "help": "this list",
 }
+# Commands that take a word after them; new_commands passes it on ("mode story").
+WITH_ARGUMENT = ("mode", "goal")
 ALIASES = {"screenshot": "ss", "shot": "ss", "s": "status", "info": "status", "commands": "help",
            "restart": "rejoin"}
 
@@ -72,7 +78,11 @@ def new_commands(messages: list[dict], user_id: str, after: int) -> tuple[list[s
         if str(author.get("id", "")) != str(user_id) or author.get("bot"):
             continue
         command = parse_command(message.get("content", ""))
-        if command:
+        if command in WITH_ARGUMENT:
+            words = message.get("content", "").strip().split(maxsplit=1)
+            argument = words[1].strip().lower() if len(words) > 1 else ""
+            found.append(f"{command} {argument}".strip())
+        elif command:
             found.append(command)
     return found, newest
 

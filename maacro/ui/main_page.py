@@ -24,11 +24,11 @@ from ..remote import RemoteControl, help_text
 from ..capture import CaptureThread, window_state
 from ..control import input as inp
 from ..detector import DetectorThread
-from ..goals import goal_reached, goal_text, stop_time
+from ..goals import eta_text, goal_reached, goal_text, stop_time
 from ..history import hms, load_runs, summarize
 from ..card_strategy import STRATEGIES
 from ..summer_config import SummerConfig
-from ..modes import BY_KEY, MODES, last_behavior, last_mode, save_behavior, save_mode
+from ..modes import BY_KEY, MODES, find_mode, last_behavior, last_mode, save_behavior, save_mode
 from ..party import BEHAVIORS, PARTY, SOLO, with_party
 from ..stats import SessionStats
 from ..webhook import Notifier
@@ -276,6 +276,11 @@ class MainPage(QWidget):
         self.goal_value.setToolTip("Settings → Session goals: stop by itself after N runs, "
                                    "after so long, or after too many losses in a row.")
         box_layout.addWidget(row)
+        self.eta_row, self.eta_value = key_value_row("Time to Goal", "—")
+        self.eta_row.setToolTip("When the soonest session goal ends the session. A runs goal uses "
+                                "this session's pace (the gaps between matches included).")
+        self.eta_row.hide()
+        box_layout.addWidget(self.eta_row)
         row, self.lifetime_value = key_value_row("All-time Runs", "—")
         row.setToolTip("Every run ever recorded (runs/runs.csv). Details on the Stats page.")
         box_layout.addWidget(row)
@@ -616,8 +621,8 @@ class MainPage(QWidget):
                 path = None
         status = [f"Screen: {self.screen_value.text()} · Doing: {self.action_value.text()}",
                   f"Map: {self.map_value.text()} · Wave: {self.wave_value.text()}"]
-        goal = goal_text(self.app_settings, self.stats.runs)
-        if goal != "None":
+        goal = self._goal_line()
+        if goal:
             status.append(f"Goal: {goal}")
         self.notifier.report(self.stats, self.mode_label(), status, path)
 
@@ -672,10 +677,15 @@ class MainPage(QWidget):
         return results
 
     # --- Discord remote control -----------------------------------------
-    def _on_remote_command(self, command: str) -> None:
-        self.log_panel.log(f"Discord remote: !{command}")
+    def _on_remote_command(self, text: str) -> None:
+        self.log_panel.log(f"Discord remote: !{text}")
+        command, _, argument = text.partition(" ")
         reply = self.remote.reply
-        if command == "help":
+        if command == "mode":
+            reply(self._remote_mode(argument))
+        elif command == "goal":
+            reply(self._remote_goal(argument))
+        elif command == "help":
             reply(help_text())
         elif command == "status":
             reply(self._status_text())
@@ -707,6 +717,58 @@ class MainPage(QWidget):
             ok = self.relaunch_roblox("restart", "asked from Discord")
             reply("Restarting Roblox…" if ok else "Can't rejoin right now (check the server link in Settings).")
 
+    def _remote_mode(self, argument: str) -> str:
+        names = ", ".join(f"`{m.key}`" for m in MODES)
+        if not argument:
+            return f"Mode: **{self.mode_label()}**. Switch with `!mode <name>`: {names}."
+        key = find_mode(argument)
+        if key is None:
+            return f"No mode called '{argument}'. Modes: {names}."
+        if key == self.mode:
+            return f"Already on {self.mode_label()}."
+        was_running = self.stats.running
+        self.set_mode(key)
+        if not was_running:
+            return f"Mode: **{self.mode_label()}** (not started — `!start` to run it)."
+        self._start_when_stopped(time.monotonic() + 15)
+        return f"Switched to **{self.mode_label()}** — starting it as soon as the old mode has stopped."
+
+    def _start_when_stopped(self, give_up_at: float) -> None:
+        if any(t.isRunning() for t in self.macros.values()):
+            if time.monotonic() < give_up_at:
+                QTimer.singleShot(500, lambda: self._start_when_stopped(give_up_at))
+            else:
+                self.log_panel.log("The old mode didn't stop in 15 s — press Start yourself.", "Warn")
+            return
+        self.start_macro()
+
+    def _remote_goal(self, argument: str) -> str:
+        if not argument.isdigit() or int(argument) > 100000:
+            return "Use `!goal 50` (a number of runs; `!goal 0` = no runs goal)."
+        settings = AppSettings.load()
+        settings.stop_after_runs = int(argument)
+        settings.save()
+        self.apply_app_settings(settings)
+        if not settings.stop_after_runs:
+            return "Runs goal off."
+        line = f"Stopping after {settings.stop_after_runs} runs (now {self.stats.runs})."
+        eta = self._eta()
+        return line + (f" {eta}." if eta else "")
+
+    def _eta(self) -> str:
+        if not (self.stats.running and hasattr(self, "app_settings")):
+            return ""
+        return eta_text(self.app_settings, self.stats.runs, self.stats.session_seconds,
+                        started=getattr(self, "_started_at", None))
+
+    def _goal_line(self) -> str:
+        """"12 / 50 runs — 38 runs left · ≈ 5 h (done ≈ 21:40)"; "" with no goal."""
+        goal = goal_text(self.app_settings, self.stats.runs)
+        if goal == "None":
+            return ""
+        eta = self._eta()
+        return f"{goal} — {eta}" if eta else goal
+
     def _session_line(self) -> str:
         s = self.stats
         rate = f" ({s.win_rate:.0f}%)" if s.runs else ""
@@ -718,8 +780,8 @@ class MainPage(QWidget):
                  f"Screen: {self.screen_value.text()} · Doing: {self.action_value.text()}",
                  f"Map: {self.map_value.text()} · Wave: {self.wave_value.text()}",
                  self._session_line()]
-        goal = goal_text(self.app_settings, self.stats.runs)
-        if goal != "None":
+        goal = self._goal_line()
+        if goal:
             lines.append(f"Goal: {goal}")
         return "\n".join(lines)
 
@@ -790,6 +852,9 @@ class MainPage(QWidget):
         self.time_value.setText(self.stats.session_time_text())
         if hasattr(self, "app_settings") and hasattr(self, "goal_value"):
             self.goal_value.setText(goal_text(self.app_settings, self.stats.runs))
+            eta = self._eta()
+            self.eta_value.setText(eta.split(" · ", 1)[-1] if eta else "—")
+            self.eta_row.setVisible(bool(eta))
             if self.app_settings.stop_after_minutes or self.app_settings.stop_at:
                 self._check_goals()
             self._maybe_report()
