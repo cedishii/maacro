@@ -3,6 +3,9 @@
 ## Unreleased
 
 **Fixed**
+- **A list left at the bottom was taken for "all maxed".** Each sweep assumed the list starts at the
+  top; when it had been left at the bottom (all Max there), the first scroll down didn't move it, so
+  it was taken for a list that doesn't scroll. Every sweep now starts by going to the top.
 - **Summer Event never scrolled the Unit Overview.** The scrolling was only in the other modes, so with
   more than 8 units Summer upgraded what was on screen, then called everything "maxed". Summer now
   scrolls too (every mode is checked by a test).

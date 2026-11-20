@@ -204,7 +204,8 @@ class ScrollState:
     done_at: float = 0.0            # MacroThread's last "all maxed" time seen
     seen_at: float = 0.0            # last time the manager was handled here
     placed_seen: int = 0            # units placed when last seen
-    restart: bool = False           # start the next sweep from the top
+    restart: bool = True            # start the next sweep from the top (the first one too:
+                                    # the list may have been left anywhere, e.g. at the bottom)
     last_sig: object = None         # picture of the cards on the last handling
     peeked_at: float = 0.0          # the card-pick peek closed and reopened the manager
 
@@ -306,9 +307,10 @@ class ScrollingUpgrades:
             return
         if st.restart:
             st.restart, st.empty_run = False, 0
-            if st.steps > 0 or st.checking or st.going_up:
-                self._scroll_to_top(hwnd, title, det.lines, verify=False)
-                return
+            # Always: where the list was left isn't known (the player may
+            # have scrolled it, or a previous run left it at the bottom).
+            self._scroll_to_top(hwnd, title, det.lines, verify=False)
+            return
             st.checking = False
             st.since = now
         if st.going_up:
@@ -329,6 +331,8 @@ class ScrollingUpgrades:
             limit = st.most_steps + 2 if st.most_steps else MAX_STEPS
             if not self._list_moved(st, det.lines, title) or st.steps >= limit:
                 if st.steps == 0:
+                    if st.scrollable is not False:
+                        self.log.emit("The unit list doesn't scroll (every unit fits on screen).", "Info")
                     st.scrollable, st.probed_at = False, now     # nothing below: leave it
                 else:
                     st.most_steps = max(st.most_steps, st.steps)  # the bottom: remember how deep
