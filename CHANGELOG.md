@@ -3,6 +3,12 @@
 ## Unreleased
 
 **Fixed**
+- **Stray clicks in the unit list.** Upgrade clicks could land while the list was still moving
+  (right after the jump to the top) or while the panel was sliding back in after the card-pick
+  peek, opening a unit's panel or its targeting menu. Clicks now wait until the list and the panel
+  stand still on two reads in a row; an open targeting menu is closed (by clicking the title, so
+  no unit's targeting changes) before anything else. The sliding panel was also mistaken for "the
+  list went back to the top"; that's waited out now (seen live on two screenshots).
 - **Slow to get through the list.** A read that missed the "Unit Overview" title (common right after
   the card-pick peek) sent a scroll in progress back to the top; it now waits for the next read.
   Each part of the list is upgraded for 6 s (was 10 s) and a part with nothing to do is left after

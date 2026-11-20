@@ -65,6 +65,10 @@ REOPEN_GAP = 3.0            # s without the manager = it was closed and opened a
 MOVED = 6                   # px a "First" button must shift to count as scrolled
 MAX_STEPS = 12              # steps down before going back to the top (bottom not found yet)
 UP_RETRIES = 2              # tries more when the list didn't go back up
+STEADY = 0.45               # picture change between two reads below this = the list stands still
+                            # (a scroll of even 5 px changes ~0.5 of the blocks)
+SLID = 4                    # px the title may move: more = the panel is still sliding in
+TARGET_WORDS = ("weakest", "farthest", "strongest", "closest")   # a unit's targeting menu
 
 
 # Picture check: share of blocks that changed. A scroll changes 0.8+ of them
@@ -208,6 +212,9 @@ class ScrollState:
     restart: bool = True            # start the next sweep from the top (the first one too:
                                     # the list may have been left anywhere, e.g. at the bottom)
     last_sig: object = None         # picture of the cards on the last handling
+    last_title_x: float = -1.0      # where the title was then
+    steady: bool = True             # the list and the panel stood still since the last read
+    before_title_x: float = -1.0    # where the title was before the last scroll
     peeked_at: float = 0.0          # the card-pick peek closed and reopened the manager
 
 
@@ -236,8 +243,11 @@ class ScrollingUpgrades:
             if st.scrollable is False:
                 st.scrollable = None                # the new unit may make it scroll
 
-    def _list_moved(self, st: ScrollState, lines: list[OcrLine], title: OcrLine) -> bool:
-        """Did the last scroll move the list? The picture first, then the text."""
+    def _list_moved(self, st: ScrollState, lines: list[OcrLine], title: OcrLine) -> bool | None:
+        """Did the last scroll move the list? The picture first, then the text.
+        None = can't tell yet (the panel itself is still sliding in)."""
+        if st.before_title_x >= 0 and abs(title.x - st.before_title_x) > SLID:
+            return None
         _, frame = self.capture.latest_frame()
         change = picture_change(st.before_sig, list_signature(frame, title))
         if change is not None and change >= PICTURE_MOVED:
@@ -250,6 +260,7 @@ class ScrollingUpgrades:
         st.before = card_marks(lines, title)
         _, frame = self.capture.latest_frame()
         st.before_sig = list_signature(frame, title)
+        st.before_title_x = title.x if lines else -1.0
 
     def _settled(self, st: ScrollState, now: float) -> bool:
         fresh = getattr(self.detector, "latest_count", 0) >= st.reads + 2
@@ -263,27 +274,35 @@ class ScrollingUpgrades:
         done = getattr(self, "_last_done", {})
         peek_before = done.get("card_peek")
         now = time.monotonic()
+        det = self.detector.latest
+        title = overview_title(det.lines) if det is not None and det.screen == "unit_manager" else None
+        sig = None
+        if title is not None:
+            _, frame = self.capture.latest_frame()
+            sig = list_signature(frame, title)
         if st.peeked_at:
             if now - st.peeked_at < SETTLE:
                 st.seen_at = now
                 return                              # the manager is still opening
+            if (title is None or abs(title.x - st.last_title_x) > SLID) and now - st.peeked_at < 4.0:
+                st.seen_at = now
+                return                              # still sliding in: wait until it stands
             st.peeked_at = 0.0
-            if st.steps > 0 and not (st.checking or st.going_up):
-                det = self.detector.latest
-                title = overview_title(det.lines) if det is not None and det.screen == "unit_manager" else None
-                if title is not None:
-                    _, frame = self.capture.latest_frame()
-                    change = picture_change(st.last_sig, list_signature(frame, title))
-                    if change is not None and change >= PICTURE_MOVED:
-                        self.log.emit("The unit list went back to the top when it was reopened — "
-                                      "going through it from the top again.", "Info")
-                        st.steps, st.since = 0, now
+            if (st.steps > 0 and not (st.checking or st.going_up) and title is not None
+                    and abs(title.x - st.last_title_x) <= SLID):
+                change = picture_change(st.last_sig, sig)
+                if change is not None and change >= PICTURE_MOVED:
+                    self.log.emit("The unit list went back to the top when it was reopened — "
+                                  "going through it from the top again.", "Info")
+                    st.steps, st.since = 0, now
+            st.steady = False                       # one more read before clicking
+        elif title is not None:
+            change = picture_change(st.last_sig, sig)
+            st.steady = abs(title.x - st.last_title_x) <= SLID and (change is None or change < STEADY)
         else:
-            det = self.detector.latest
-            title = overview_title(det.lines) if det is not None and det.screen == "unit_manager" else None
-            if title is not None and not (st.checking or st.going_up):
-                _, frame = self.capture.latest_frame()
-                st.last_sig = list_signature(frame, title)
+            st.steady = False
+        if title is not None and not (st.checking or st.going_up):
+            st.last_sig, st.last_title_x = sig, title.x
         try:
             self._scroll_unit_manager(hwnd)
         finally:
@@ -308,6 +327,8 @@ class ScrollingUpgrades:
             st.checking = st.going_up = False
             super()._on_unit_manager(hwnd)
             return
+        if self._targeting_menu_open(hwnd, det.lines, title):
+            return                                  # close it before any scroll or click
         if st.restart:
             st.restart, st.empty_run = False, 0
             # Always: where the list was left isn't known (the player may
@@ -319,8 +340,11 @@ class ScrollingUpgrades:
         if st.going_up:
             if not self._settled(st, now):
                 return
+            moved = self._list_moved(st, det.lines, title)
+            if moved is None and now - st.since < 5:
+                return                              # the panel is still sliding in
             st.going_up = False
-            if st.up_tries < UP_RETRIES and not self._list_moved(st, det.lines, title):
+            if st.up_tries < UP_RETRIES and moved is False:
                 st.up_tries += 1
                 self.log.emit("The unit list didn't go back to the top — scrolling up again.", "Info")
                 self._scroll_to_top(hwnd, title, det.lines)
@@ -330,9 +354,12 @@ class ScrollingUpgrades:
         if st.checking:
             if not self._settled(st, now):
                 return                              # still scrolling / not read since
+            moved = self._list_moved(st, det.lines, title)
+            if moved is None and now - st.since < 5:
+                return                              # the panel is still sliding in
             st.checking = False
             limit = st.most_steps + 2 if st.most_steps else MAX_STEPS
-            if not self._list_moved(st, det.lines, title) or st.steps >= limit:
+            if not moved or st.steps >= limit:
                 if st.steps == 0:
                     if st.scrollable is not False:
                         self.log.emit("The unit list doesn't scroll (every unit fits on screen).", "Info")
@@ -347,6 +374,8 @@ class ScrollingUpgrades:
                                   "(top to bottom, then back to the top).", "Info")
                 st.scrollable = True
                 st.steps += 1
+        if not st.steady:
+            return                                  # the list or panel is moving: no clicks yet
         if st.scrollable is False:
             if now - st.probed_at < REPROBE:
                 super()._on_unit_manager(hwnd)      # one screenful: nothing changes
@@ -370,6 +399,22 @@ class ScrollingUpgrades:
             st.empty_run += 1                       # counted once per part of the list
         self._scroll_down(hwnd, title, det.lines)
 
+    def _targeting_menu_open(self, hwnd: int, lines: list[OcrLine], title: OcrLine) -> bool:
+        """A unit's targeting menu (First / Weakest / Farthest...) is open over
+        the list, opened by a click that landed on a card's "First" button.
+        Another click could change the unit's targeting: close it by clicking
+        the title (nothing there) and wait."""
+        found = {w for l in _inside(lines, title) for w in TARGET_WORDS if w in _norm(l.text)}
+        if len(found) < 2:
+            return False
+        if self._cooldown("close_targeting", 2.0):
+            self.log.emit("A targeting menu was open in the unit list - closing it "
+                          "(no unit's targeting is changed).", "Warn")
+            inp.click(hwnd, title.center_x, title.y + title.h / 2)
+            self._park_mouse(hwnd)
+            self._scroll.steady = False
+        return True
+
     def _buttons_to_upgrade(self, lines: list[OcrLine], buttons: list[OcrLine]) -> list[OcrLine]:
         """The buttons that count as work (PlaceOnlyUnits leaves some out)."""
         return buttons
@@ -391,12 +436,15 @@ class ScrollingUpgrades:
 
     def _scroll_to_top(self, hwnd: int, title: OcrLine, lines: list[OcrLine] | None = None,
                        verify: bool = True) -> None:
-        """Back to the top; with verify, the next read checks that it moved."""
+        """Back to the top; the next reads wait for it to settle (and with
+        verify, check that it moved)."""
         st = self._scroll
         deep = max(st.steps, st.most_steps) + 2
         notches = max(TOP_NOTCHES, deep * SCROLL_NOTCHES * 2)
         self._remember_list(st, lines or [], title)
-        st.going_up = verify and (st.steps > 0 or st.up_tries > 0)
+        if not (verify and (st.steps > 0 or st.up_tries > 0)):
+            st.up_tries = UP_RETRIES                # settle only, no "did it move" check
+        st.going_up = True
         st.checking = False
         st.steps, st.since = 0, time.monotonic()
         st.reads = getattr(self.detector, "latest_count", 0)
