@@ -205,6 +205,8 @@ class ScrollState:
     seen_at: float = 0.0            # last time the manager was handled here
     placed_seen: int = 0            # units placed when last seen
     restart: bool = False           # start the next sweep from the top
+    last_sig: object = None         # picture of the cards on the last handling
+    peeked_at: float = 0.0          # the card-pick peek closed and reopened the manager
 
 
 class ScrollingUpgrades:
@@ -252,6 +254,42 @@ class ScrollingUpgrades:
         return not (now - st.since < SETTLE or (not fresh and now - st.since < 5))
 
     def _on_unit_manager(self, hwnd: int) -> None:
+        """The card-pick peek (MacroThread, every 5 s) closes and reopens the
+        manager inside this call: that isn't a "reopened, start from the top",
+        but if the game put the list back at the top, the picture shows it."""
+        st = self._scroll_state()
+        done = getattr(self, "_last_done", {})
+        peek_before = done.get("card_peek")
+        now = time.monotonic()
+        if st.peeked_at:
+            if now - st.peeked_at < SETTLE:
+                st.seen_at = now
+                return                              # the manager is still opening
+            st.peeked_at = 0.0
+            if st.steps > 0 and not (st.checking or st.going_up):
+                det = self.detector.latest
+                title = overview_title(det.lines) if det is not None and det.screen == "unit_manager" else None
+                if title is not None:
+                    _, frame = self.capture.latest_frame()
+                    change = picture_change(st.last_sig, list_signature(frame, title))
+                    if change is not None and change >= PICTURE_MOVED:
+                        self.log.emit("The unit list went back to the top when it was reopened — "
+                                      "going through it from the top again.", "Info")
+                        st.steps, st.since = 0, now
+        else:
+            det = self.detector.latest
+            title = overview_title(det.lines) if det is not None and det.screen == "unit_manager" else None
+            if title is not None and not (st.checking or st.going_up):
+                _, frame = self.capture.latest_frame()
+                st.last_sig = list_signature(frame, title)
+        try:
+            self._scroll_unit_manager(hwnd)
+        finally:
+            st.seen_at = time.monotonic()
+            if done.get("card_peek") != peek_before:
+                st.peeked_at = st.seen_at
+
+    def _scroll_unit_manager(self, hwnd: int) -> None:
         m, cfg = self.match, self.settings
         st = self._scroll_state()
         now = time.monotonic()
