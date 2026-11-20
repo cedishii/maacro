@@ -34,7 +34,7 @@ import cv2
 from ..farm_first import FarmFirst
 from ..general.controller import GeneralThread
 from ..general.maps import MAPS_DIR, PointZones, load_general_maps
-from ..upgrades import card_marks, overview_title
+from ..upgrades import card_names, overview_title
 from ..control import input as inp
 from ..vision.screens import fuzzy_in
 from ..placement import button_unit
@@ -206,7 +206,7 @@ class SkyPortalThread(FarmFirst, GeneralThread):
         scroll = getattr(self, "_scroll", None)
         if title is None or (scroll is not None and scroll.scrollable):
             return          # part of the list is hidden: can't count
-        _, names = card_marks(det.lines, title)
+        names = card_names(det.lines, title)
         now = time.monotonic()
         for key in dict.fromkeys(cfg.placement_order):
             name = cfg.unit_names.get(key, "").strip()

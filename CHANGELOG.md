@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+**Fixed**
+- **Unit Overview scrolling got stuck at the bottom.** The panel is see-through, so the game's text
+  behind it was read as part of the list; it changed on every read, the bottom was never noticed,
+  and the macro kept scrolling down (up to 15 steps, 10 s each) instead of going back up. A
+  "First" button OCR missed on one read had the same effect. Now only the cards are compared (each
+  "First" button and the unit name on that card), and a small misread doesn't count as a move.
+- **New units are checked straight away.** After a unit is placed, when the manager is opened again,
+  and after a "maxed" recheck, upgrading starts from the top of the list. A short list that didn't
+  scroll before is checked again when a unit is placed.
+- Going back to the top is checked; if the list didn't move up, it's scrolled up again.
+
 **New**
 - **Record your play, MAACRO plays it back** (Settings → *Your own play*, off until you switch it
   on). A **Record** button sits under Start / Stop. Recording starts when the match starts (the
