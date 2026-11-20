@@ -3,6 +3,12 @@
 ## Unreleased
 
 **Fixed**
+- **Summer Event never scrolled the Unit Overview.** The scrolling was only in the other modes, so with
+  more than 8 units Summer upgraded what was on screen, then called everything "maxed". Summer now
+  scrolls too (every mode is checked by a test).
+- **The 5-second card-pick peek no longer restarts the sweep.** It closes the manager for ~3 s, which
+  counted as "reopened → back to the top", so a long list never got past its first parts. If the
+  game really did put the list back at the top, the picture shows it and the count starts over.
 - **Unit Overview scrolling got stuck at the bottom.** The panel is see-through, so the game's text
   behind it was read as part of the list; it changed on every read, the bottom was never noticed,
   and the macro kept scrolling down (up to 15 steps, 10 s each) instead of going back up. A
