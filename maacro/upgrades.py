@@ -338,7 +338,9 @@ class ScrollingUpgrades:
         st.checking, st.since = True, time.monotonic()
         st.reads = getattr(self.detector, "latest_count", 0)
         self.match.no_upgrade_reads = 0
-        self._say("Upgrading — scrolling the unit list down", log=False)
+        part = st.steps + 2
+        total = f" of {st.most_steps + 1}" if st.most_steps and part <= st.most_steps + 1 else ""
+        self._say(f"Upgrading — unit list part {part}{total} (scrolling down)", log=False)
         inp.scroll(hwnd, *self._list_spot(title), SCROLL_NOTCHES)
         self._park_mouse(hwnd)
 
@@ -354,6 +356,6 @@ class ScrollingUpgrades:
         st.steps, st.since = 0, time.monotonic()
         st.reads = getattr(self.detector, "latest_count", 0)
         self.match.no_upgrade_reads = 0
-        self._say("Upgrading — back to the top of the unit list", log=False)
+        self._say("Upgrading — back to the top of the unit list (part 1)", log=False)
         inp.scroll(hwnd, *self._list_spot(title), -notches)
         self._park_mouse(hwnd)
