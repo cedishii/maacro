@@ -3,6 +3,10 @@
 ## Unreleased
 
 **Fixed**
+- **Slow to get through the list.** A read that missed the "Unit Overview" title (common right after
+  the card-pick peek) sent a scroll in progress back to the top; it now waits for the next read.
+  Each part of the list is upgraded for 6 s (was 10 s) and a part with nothing to do is left after
+  1 s (was 1.5 s).
 - **A list left at the bottom was taken for "all maxed".** Each sweep assumed the list starts at the
   top; when it had been left at the bottom (all Max there), the first scroll down didn't move it, so
   it was taken for a list that doesn't scroll. Every sweep now starts by going to the top.

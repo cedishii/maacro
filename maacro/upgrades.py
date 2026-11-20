@@ -56,8 +56,9 @@ from .vision.screens import _norm, fuzzy_in
 LIST_DY = 0.95
 SCROLL_NOTCHES = 3          # per step down
 TOP_NOTCHES = 30            # back to the top in one go (more for a long list)
-STAY = 10.0                 # s on a part of the list that still has upgrades
-EMPTY_STAY = 1.5            # s on a part with nothing to upgrade
+STAY = 6.0                  # s on a part of the list that still has upgrades
+EMPTY_STAY = 1.0            # s on a part with nothing to upgrade
+LOST_TITLE_WAIT = 6.0       # s a scroll's result is waited for when the title isn't read
 SETTLE = 0.7                # s after scrolling before reading the list again
 REPROBE = 30.0              # s before checking a list that didn't scroll again
 REOPEN_GAP = 3.0            # s without the manager = it was closed and opened again
@@ -299,6 +300,8 @@ class ScrollingUpgrades:
             cfg.place_units and m.pending and not self._place_paused())
         det = self.detector.latest
         title = overview_title(det.lines) if det is not None and det.screen == "unit_manager" else None
+        if upgrading and title is None and (st.checking or st.going_up) and now - st.since < LOST_TITLE_WAIT:
+            return      # the title wasn't read this time (often right after the card-pick peek): wait
         if not upgrading or title is None:
             if st.checking or st.going_up:
                 st.restart = True                   # a scroll was left unread: position unknown
