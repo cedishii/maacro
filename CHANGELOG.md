@@ -3,6 +3,20 @@
 ## Unreleased
 
 **New**
+- **Accurate walks and turns.** Walks are timed to the millisecond (keys used to be let go up to
+  0.15 s late) and can do more than hold keys: `turn 240` / `turn -150` turns the camera the way
+  a hand does (right button held, the mouse moved by exact counts in small even steps, so the
+  same turn every time), `w until select world 6` walks until a text shows (at most 6 s), and
+  `wait 0.5` pauses. **Record** now catches camera turns too (the mouse's raw movement while the
+  right button is held: Roblox locks the cursor then, so its position doesn't change). Read
+  only; nothing is pressed while recording.
+- **Overnight** (Settings): *Keep the PC awake* while the macro runs (a sleeping or locked PC
+  gives black pictures); *Carry on after a crash or a PC restart* (MAACRO starts the macro again
+  20 s after it opens, Stop cancels); *Open MAACRO when Windows starts*; *Start at* a clock time;
+  *Fresh Roblox every N hours*, restarted only between matches.
+- **Loss replays:** a ~20 s sped-up video of the last 3 minutes before each defeat
+  (`runs/<time>_loss.mp4`, the newest 10), so you can see where the defence broke. Small pictures
+  kept in memory (~3 MB), saved in the background. Discord: `!replay`.
 - **Record the walk into the door** (Configs → *Start from the lobby* → Record): walk it once
   yourself in Roblox; MAACRO only reads the keys you hold (like the hotkeys) and writes the walk
   ("w+d 1.8, w 0.4"), with Sprint on if you held Shift. Fingers not lifting together are folded

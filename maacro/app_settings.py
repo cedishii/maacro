@@ -43,6 +43,13 @@ class AppSettings:
     # Profiles named after a map are used by themselves on that map.
     auto_profiles: bool = True
 
+    # Overnight (night_guard.py, loss_replay.py).
+    keep_awake: bool = True                 # no sleep / screen off while the macro runs
+    resume_after_crash: bool = True         # MAACRO closed while running (crash, PC restart) → go on
+    start_at: str = ""                      # "01:00": press Start by itself at this time ("" = off)
+    fresh_roblox_hours: int = 0             # restart Roblox every N hours between matches (0 = off)
+    loss_replay: bool = True                # save a short video of the minutes before each defeat
+
     # Discord remote control (a bot of your own; see remote.py).
     remote_enabled: bool = False
     remote_token: str = ""

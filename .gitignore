@@ -21,3 +21,7 @@ mode.json
 webhook.json
 app_settings.json
 profiles/
+running.json
+story_config.json
+infinite_config.json
+challenge_config.json

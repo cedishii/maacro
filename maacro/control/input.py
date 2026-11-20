@@ -15,6 +15,7 @@ _user32 = ctypes.WinDLL("user32", use_last_error=True)
 INPUT_MOUSE, INPUT_KEYBOARD = 0, 1
 MOUSEEVENTF_MOVE = 0x0001
 MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP = 0x0002, 0x0004
+MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP = 0x0008, 0x0010
 MOUSEEVENTF_WHEEL, WHEEL_DELTA = 0x0800, 120
 KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE = 0x0002, 0x0008
 ULONG_PTR = ctypes.c_size_t
@@ -128,6 +129,36 @@ def scroll(hwnd: int, x: float, y: float, notches: int) -> None:
                                                                     MOUSEEVENTF_WHEEL, 0, 0)))
         _send(wheel)
         time.sleep(0.04)
+
+
+def turn_camera(dx: int, dy: int = 0, chunk: int = 8, pause: float = 0.002) -> None:
+    """Turn the Roblox camera: hold the right button and move the mouse by
+    (dx, dy) counts (relative, like a real mouse), in small even steps. The
+    same counts give the same turn every time, at a given camera sensitivity."""
+    steps = max(1, -(-max(abs(dx), abs(dy)) // chunk))
+    _send(_mouse(MOUSEEVENTF_RIGHTDOWN))
+    try:
+        precise_sleep(0.03)
+        done_x = done_y = 0
+        for i in range(1, steps + 1):
+            x, y = round(dx * i / steps), round(dy * i / steps)
+            _send(_mouse(MOUSEEVENTF_MOVE, x - done_x, y - done_y))
+            done_x, done_y = x, y
+            precise_sleep(pause)
+        precise_sleep(0.03)
+    finally:
+        _send(_mouse(MOUSEEVENTF_RIGHTUP))
+
+
+def precise_sleep(seconds: float) -> None:
+    """Sleep to within about a millisecond (plain sleep can overshoot): sleep
+    most of it, then spin the last moment."""
+    end = time.perf_counter() + seconds
+    while True:
+        left = end - time.perf_counter()
+        if left <= 0:
+            return
+        time.sleep(left - 0.0015 if left > 0.002 else 0)
 
 
 # --- keyboard --------------------------------------------------------------

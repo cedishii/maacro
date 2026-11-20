@@ -315,9 +315,11 @@ class ModeSettings(QWidget):
             form.addRow("Difficulty", difficulty)
             self.lobby_fields["difficulty"] = difficulty
         walk = QLineEdit(placeholderText="w+d 2")
-        walk.setToolTip("How to walk from where the teleport puts you into a door: keys held together "
-                        "joined by +, then seconds; steps separated by commas (e.g. 'w+d 2' or "
-                        "'w 1, d 0.5'). It stops early once the world window shows.")
+        walk.setToolTip("How to walk from where the teleport puts you into a door, steps separated by "
+                        "commas:\n  w+d 2 — hold W and D for 2 s\n  w until select world 6 — hold W until "
+                        "that text shows (at most 6 s)\n  turn 300 / turn -150 — turn the camera right / "
+                        "left (mouse counts)\n  wait 0.5 — pause\nTimed to the millisecond; it stops "
+                        "early once the world window shows. Easiest: press Record and walk it once.")
         walk_row = QHBoxLayout()
         walk_row.addWidget(walk, 1)
         self.record_walk_button = QPushButton("Record")
@@ -379,10 +381,10 @@ class ModeSettings(QWidget):
     def _lobby_problem(self) -> str:
         if not self.lobby_fields:
             return ""
-        from ..lobby_start import parse_route
+        from ..lobby_start import parse_steps
         walk = self.lobby_fields["lobby_walk"].text().strip() or "w+d 2"
         try:
-            parse_route(walk)
+            parse_steps(walk)
         except ValueError as exc:
             return f"Walk into the door: {exc}."
         on = self.lobby_fields["lobby_start"].isChecked()

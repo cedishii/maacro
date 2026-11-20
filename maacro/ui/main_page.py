@@ -11,11 +11,12 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import (
-    QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSplitter,
+    QApplication, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSplitter,
     QVBoxLayout, QWidget,
 )
 
-from .. import relaunch, setup_check
+from .. import night_guard, relaunch, setup_check
+from ..loss_replay import LossReplay, latest_replay
 from .. import runs as runs_module
 from ..app_settings import AppSettings, hotkey_vk
 from ..auto_profile import with_auto_profile
@@ -55,6 +56,12 @@ class MainPage(QWidget):
         self.app_settings = AppSettings.load()
         self.rejoin_watch = relaunch.RejoinWatch()
         self._relaunching = False
+        # Overnight: loss replays, fresh Roblox, start at a time, resume after a crash.
+        self.replay = LossReplay()
+        self.fresh = night_guard.FreshRestart()
+        self._start_at_fired = None
+        self._resume_pending = False
+        self._session_ending = False
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -143,6 +150,11 @@ class MainPage(QWidget):
 
         self.log_panel.log(f"MAACRO started. Waiting for Roblox… ({self.app_settings.start_key} = start, "
                            f"{self.app_settings.stop_key} = stop)")
+        app = QApplication.instance()
+        if app is not None and hasattr(app, "commitDataRequest"):
+            # Windows is shutting down / restarting: keep the "running" mark, so we resume.
+            app.commitDataRequest.connect(lambda *_: setattr(self, "_session_ending", True))
+        QTimer.singleShot(0, self._maybe_resume)
 
     # --- layout --------------------------------------------------------
     def _build_overview(self) -> QWidget:
@@ -368,6 +380,17 @@ class MainPage(QWidget):
             self.behavior_changed.emit(key)
 
     def _post_run(self, record) -> None:
+        if getattr(record, "result", "") == "loss" and self.app_settings.loss_replay and len(self.replay) >= 3:
+            job = self.replay.detach()
+
+            def save():
+                path = job.save()
+                if path is not None:
+                    self._log_bridge.line.emit(f"Loss replay saved: runs/{path.name} (the last minutes "
+                                               "before the defeat; Discord: !replay).", "Info")
+            threading.Thread(target=save, daemon=True).start()
+        else:
+            self.replay.clear()
         # A moment later, so the win/loss is already in the totals.
         mode = self.mode_label()
         room = getattr(self.macro, "room", None) if self.mode == "infinity_castle" else None
@@ -467,6 +490,12 @@ class MainPage(QWidget):
         self.mode_box.setEnabled(False)
         self.behavior_box.setEnabled(False)
         self.macro.start()
+        self._resume_pending = False
+        night_guard.mark_running(self.mode)
+        if self.app_settings.keep_awake:
+            night_guard.keep_awake(True)
+        self.fresh.reset()
+        self.replay.clear()
         # Bring Roblox to the front right away (not only on the first click).
         hwnd = self.capture.hwnd if hasattr(self, "capture") else None
         if hwnd:
@@ -476,6 +505,11 @@ class MainPage(QWidget):
                 pass
 
     def stop_macro(self) -> None:
+        if self._resume_pending:
+            self._resume_pending = False
+            self.log_panel.log("Resuming cancelled.")
+        night_guard.clear_running()
+        night_guard.keep_awake(False)
         if not self.stats.running and not self.macro.isRunning():
             return
         self.macro.requestInterruption()
@@ -578,6 +612,7 @@ class MainPage(QWidget):
                            + f"opening it on {where}.", "Warn")
         self.notifier.rejoined(why, where)
         self.rejoin_watch.note_launch()
+        self.fresh.reset()
         self._relaunching = True
         inp.release_all()
 
@@ -647,6 +682,42 @@ class MainPage(QWidget):
         latest = self.detector.latest
         if latest is not None:
             self._recent_screens.append(latest.screen)
+        screen = self.detector.tracker.screen
+        s = self.app_settings
+        if self.stats.running and s.loss_replay:
+            _, frame = self.capture.latest_frame()
+            self.replay.add(frame, screen)
+        if self.fresh.due(s.fresh_roblox_hours, self.stats.running, screen):
+            if self.relaunch_roblox("restart", f"a fresh Roblox (every {s.fresh_roblox_hours} h, "
+                                               "between matches)"):
+                self.fresh.reset()
+        if not self.stats.running and not self._resume_pending and night_guard.start_due(
+                s.start_at, datetime.now(), self._start_at_fired):
+            self._start_at_fired = datetime.now().date()
+            self.log_panel.log(f"It's {s.start_at} — starting (Settings → Overnight).")
+            self.start_macro()
+
+    # --- overnight -------------------------------------------------------
+    def _maybe_resume(self) -> None:
+        """MAACRO closed while the macro ran (a crash, a PC restart): start again."""
+        session = night_guard.interrupted_session()
+        if session is None:
+            return
+        if not self.app_settings.resume_after_crash:
+            night_guard.clear_running()
+            return
+        if session.get("mode") in BY_KEY:
+            self.set_mode(session["mode"])
+        self._resume_pending = True
+        self.log_panel.log(f"MAACRO closed while running last time (a crash or a PC restart) — "
+                           f"starting {self.mode_label()} again in {night_guard.RESUME_DELAY} s. "
+                           f"Press {self.app_settings.stop_key} / Stop to cancel.", "Warn")
+        QTimer.singleShot(night_guard.RESUME_DELAY * 1000, self._resume_now)
+
+    def _resume_now(self) -> None:
+        if self._resume_pending and not self.stats.running:
+            self._resume_pending = False
+            self.start_macro()
 
     def _ocr_error(self) -> str:
         if not hasattr(self, "_ocr_problem"):
@@ -681,7 +752,13 @@ class MainPage(QWidget):
         self.log_panel.log(f"Discord remote: !{text}")
         command, _, argument = text.partition(" ")
         reply = self.remote.reply
-        if command == "mode":
+        if command == "replay":
+            path = latest_replay()
+            if path is None:
+                reply("No loss replay yet — one is saved after each defeat (Settings → Overnight).")
+            else:
+                reply(f"Last loss replay ({path.stem[:15]})", path)
+        elif command == "mode":
             reply(self._remote_mode(argument))
         elif command == "goal":
             reply(self._remote_goal(argument))
@@ -811,6 +888,9 @@ class MainPage(QWidget):
 
     def shutdown(self) -> None:
         self.remote.stop()
+        if not self._session_ending:
+            night_guard.clear_running()     # closed on purpose: nothing to resume
+        night_guard.keep_awake(False)
         for thread in self.macros.values():
             thread.requestInterruption()
         for thread in self.macros.values():

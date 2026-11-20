@@ -47,13 +47,16 @@ python -m venv .venv
   (best map per hour, card styles compared, where the losses are), a 14-day chart, and results
   per map, per stage kind and per day (misread map names are matched up).
 - **Time to goal:** how long until the session goal at this session's pace.
+- **Overnight:** keeps the PC awake, carries on after a crash or a Windows restart, opens with
+  Windows, starts at a clock time, and restarts Roblox every few hours between matches.
+- **Loss replays:** a short video of the minutes before each defeat (`!replay` on Discord).
 - **Profiles and share codes:** keep a setup per stage or team, switch in one click, and
   share a setup as one line of text (`MAACRO1:…`).
 - **Per-unit plans:** upgrade a unit only up to N, place or upgrade it only from wave N.
 - **Setup check:** finds window, screen-reading and unit-setup problems before they cost runs.
 - **Profiles by map:** a profile named after a map is used by itself on that map.
 - **Discord remote control:** `!status`, `!stats`, `!ss`, `!start`, `!stop`, `!rejoin`,
-  `!mode story`, `!goal 50` from your phone, through a Discord bot of your own.
+  `!mode story`, `!goal 50`, `!replay` from your phone, through a Discord bot of your own.
 - **Actions:** click text, press or hold keys on any screen (Any Stage) — e.g. walk a lobby
   route and press Play.
 - Changeable start/stop hotkeys (F1/F3 by default).
@@ -72,8 +75,16 @@ controller and its own settings tab on the Configs page; only one runs at a time
 
 Story, Infinite and Challenge can also **start from the lobby by itself** (their Configs tab):
 Areas → Play Area / Challenges → walk into a door → (map → act / Infinite → difficulty →
-Select) → play. **Record** the walk once by walking it yourself; a failed step saves what
-MAACRO saw in `logs/lobby/`.
+Select) → play. **Record** the walk once by walking it yourself (camera turns included); a
+failed step saves what MAACRO saw in `logs/lobby/`. A walk is steps separated by commas, timed
+to the millisecond:
+
+| Step | Does |
+|---|---|
+| `w+d 2` | hold W and D for 2 s |
+| `w until select world 6` | hold W until that text shows (at most 6 s) |
+| `turn 240` / `turn -150` | turn the camera right / left (mouse counts, right button held) |
+| `wait 0.5` | pause |
 - **Any Stage** — for everything else (legend stages, raids, portals, someone else's lobby). Start a stage yourself; MAACRO places, upgrades and waits. Set
   *After the match* on its Configs tab to **Replay** (farm the stage) or **Next Stage**
   (go on through the acts), and it keeps going by itself. It never clicks Play or Return
@@ -100,6 +111,8 @@ to get past it, then a beep after 10 minutes) and click Reconnect after a discon
 - `maacro/profiles.py` — saved setups and share codes; `maacro/auto_profile.py` — picked by map
 - `maacro/remote.py` — Discord remote control (bot commands)
 - `maacro/lobby_start.py` — starting a stage from the lobby; `maacro/walk_record.py` — recording the walk
+- `maacro/night_guard.py` — overnight: keep awake, resume, start with Windows, fresh Roblox;
+  `maacro/loss_replay.py` — loss replay videos
 - `maacro/unit_plan.py` — per-unit upgrade limits and wave timing; `maacro/setup_check.py` — setup check
 - `maacro/macro.py` — the Summer Event controller (run loop, placing, upgrading, cards)
 - `maacro/infinity_castle/` — the Infinity Castle controller, settings and map zones

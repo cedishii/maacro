@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QSpinBox, QVBoxLayout, QWidget,
 )
 
-from .. import relaunch, remote
+from .. import night_guard, relaunch, remote
 from ..app_settings import HOTKEYS, AppSettings
 from ..goals import parse_time
 from ..webhook import WebhookConfig
@@ -64,6 +64,7 @@ class SettingsPage(QWidget):
 
         layout.addWidget(self._goals_box())
         layout.addWidget(self._roblox_box())
+        layout.addWidget(self._overnight_box())
         layout.addWidget(self._hotkeys_box())
         layout.addWidget(self._profiles_box())
         layout.addWidget(self._discord_box())
@@ -140,6 +141,40 @@ class SettingsPage(QWidget):
         form.addRow("Stuck on one screen for", self.rejoin_stuck)
         box_layout.addLayout(form)
         self.rejoin.toggled.connect(self._enable_rejoin)
+        return box
+
+    def _overnight_box(self) -> QFrame:
+        box, box_layout = panel("Overnight")
+        box_layout.addWidget(QLabel(
+            "For long sessions nobody watches: things that otherwise end the night early.",
+            objectName="Muted", wordWrap=True))
+        self.keep_awake = QCheckBox("Keep the PC awake while the macro runs (no sleep, screen stays on)")
+        self.keep_awake.setToolTip("A sleeping or locked PC gives black pictures, so nothing can be read.")
+        box_layout.addWidget(self.keep_awake)
+        self.resume_after_crash = QCheckBox("Carry on after a crash or a PC restart (starts again 20 s "
+                                            "after MAACRO opens)")
+        self.resume_after_crash.setToolTip("Only when MAACRO closed while the macro was running and it "
+                                           "wasn't you closing it. Stop cancels it.")
+        box_layout.addWidget(self.resume_after_crash)
+        self.start_with_windows = QCheckBox("Open MAACRO when Windows starts")
+        self.start_with_windows.setToolTip("Puts a small launcher in your Startup folder. With the box above, "
+                                           "a Windows Update restart doesn't end the session.")
+        box_layout.addWidget(self.start_with_windows)
+        self.loss_replay = QCheckBox("Save a loss replay: a short video of the minutes before each defeat")
+        self.loss_replay.setToolTip("runs/<time>_loss.mp4 (the newest 10), about 20 s long. Discord: !replay.")
+        box_layout.addWidget(self.loss_replay)
+        form = QFormLayout()
+        self.start_at = QLineEdit(placeholderText="e.g. 01:00 — empty = off")
+        self.start_at.setFixedWidth(170)
+        self.start_at.setToolTip("Press Start by itself at this time of day (once a day, if it isn't "
+                                 "running). Pairs with the stop time under Session goals.")
+        form.addRow("Start at", self.start_at)
+        self.fresh_roblox = _spin(0, 24, " h", tip="Restart Roblox every so many hours, only between matches "
+                                  "(lobby or after a match): a client running for hours gets slow and "
+                                  "crashes more. Needs the server link above; Story / Infinite / Challenge "
+                                  "need 'Start from the lobby' to get back in.")
+        form.addRow("Fresh Roblox every", self.fresh_roblox)
+        box_layout.addLayout(form)
         return box
 
     def _hotkeys_box(self) -> QFrame:
@@ -326,6 +361,12 @@ class SettingsPage(QWidget):
         self.start_key.setCurrentText(s.start_key)
         self.stop_key.setCurrentText(s.stop_key)
         self.auto_profiles.setChecked(s.auto_profiles)
+        self.keep_awake.setChecked(s.keep_awake)
+        self.resume_after_crash.setChecked(s.resume_after_crash)
+        self.loss_replay.setChecked(s.loss_replay)
+        self.start_at.setText(s.start_at)
+        self.fresh_roblox.setValue(s.fresh_roblox_hours)
+        self.start_with_windows.setChecked(night_guard.starts_with_windows())
         self.remote_enabled.setChecked(s.remote_enabled)
         self.remote_token.setText(s.remote_token)
         self.remote_channel.setText(s.remote_channel)
@@ -345,6 +386,11 @@ class SettingsPage(QWidget):
             rejoin_disconnected_seconds=self.rejoin_disconnected.value(),
             rejoin_stuck_minutes=self.rejoin_stuck.value(),
             auto_profiles=self.auto_profiles.isChecked(),
+            keep_awake=self.keep_awake.isChecked(),
+            resume_after_crash=self.resume_after_crash.isChecked(),
+            start_at=self.start_at.text().strip(),
+            fresh_roblox_hours=self.fresh_roblox.value(),
+            loss_replay=self.loss_replay.isChecked(),
             remote_enabled=self.remote_enabled.isChecked(),
             remote_token=self.remote_token.text().strip(),
             remote_channel=self.remote_channel.text().strip(),
@@ -354,6 +400,9 @@ class SettingsPage(QWidget):
         settings = self.app_settings()
         if settings.stop_at and parse_time(settings.stop_at) is None:
             self._app_message("Stop time: use the 24-hour clock, like 07:00 or 23:30.", theme.LOSS)
+            return
+        if settings.start_at and parse_time(settings.start_at) is None:
+            self._app_message("Start at: use the 24-hour clock, like 01:00.", theme.LOSS)
             return
         if settings.start_key == settings.stop_key:
             self._app_message("Start and Stop need different keys.", theme.LOSS)
@@ -369,6 +418,8 @@ class SettingsPage(QWidget):
             return
         try:
             settings.save()
+            if self.start_with_windows.isChecked() != night_guard.starts_with_windows():
+                night_guard.start_with_windows(self.start_with_windows.isChecked())
         except OSError as exc:
             self._app_message(f"Couldn't save: {exc}", theme.LOSS)
             return

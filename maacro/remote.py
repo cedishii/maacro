@@ -11,6 +11,7 @@ reads that channel every few seconds and answers commands from you only:
     !rejoin        close Roblox and open it again on your server link
     !mode story    switch mode (stops, switches, starts again if it was running)
     !goal 50       stop after 50 runs this session (!goal 0 = no runs goal)
+    !replay        the video of the last minutes before the latest defeat
     !help          this list
 
 How it works: the channel is read with Discord's REST API (no extra library;
@@ -23,6 +24,7 @@ bot's "Message Content Intent" switched on in the Discord Developer Portal.
 from __future__ import annotations
 
 import json
+import mimetypes
 import threading
 import time
 import urllib.error
@@ -46,6 +48,7 @@ COMMANDS = {
     "rejoin": "close Roblox and open it again on your server link",
     "mode": "switch mode, e.g. `!mode story` (`!mode` alone lists them)",
     "goal": "stop after N runs this session, e.g. `!goal 50` (`!goal 0` = none)",
+    "replay": "the video of the minutes before the latest defeat",
     "help": "this list",
 }
 # Commands that take a word after them; new_commands passes it on ("mode story").
@@ -132,7 +135,8 @@ def post_message(token: str, channel: str, text: str, image: Path | None = None)
             f"--{boundary}\r\nContent-Disposition: form-data; name=\"payload_json\"\r\n"
             f"Content-Type: application/json\r\n\r\n".encode() + json.dumps(payload).encode() + b"\r\n",
             f"--{boundary}\r\nContent-Disposition: form-data; name=\"files[0]\"; filename=\"{image.name}\"\r\n"
-            f"Content-Type: image/jpeg\r\n\r\n".encode() + image.read_bytes() + b"\r\n",
+            f"Content-Type: {mimetypes.guess_type(image.name)[0] or 'application/octet-stream'}"
+            f"\r\n\r\n".encode() + image.read_bytes() + b"\r\n",
             f"--{boundary}--\r\n".encode()])
         _request(token, "POST", f"/channels/{channel}/messages", body,
                  f"multipart/form-data; boundary={boundary}", timeout=30)

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import re
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -47,25 +48,77 @@ KEEP_SHOTS = 20
 _DIGITS = str.maketrans({"l": "1", "i": "1", "o": "0", "s": "5"})
 
 
-def parse_route(text: str) -> list[tuple[tuple[str, ...], float]]:
-    """"w+d 2, w 1.5" → [(("w", "d"), 2.0), (("w",), 1.5)]. Raises ValueError."""
+@dataclass(frozen=True)
+class Step:
+    """One step of a walk: hold keys for seconds (or until a text shows, with
+    seconds as the limit), turn the camera, or wait."""
+    keys: tuple[str, ...] = ()
+    seconds: float = 0.0
+    until: str = ""         # stop this step early once this text is on screen
+    turn: int = 0           # camera turn: mouse counts with the right button held (+ right, - left)
+
+    def text(self) -> str:
+        if self.turn:
+            return f"turn {self.turn}"
+        if not self.keys:
+            return f"wait {self.seconds:g}"
+        keys = "+".join(self.keys)
+        return f"{keys} until {self.until} {self.seconds:g}" if self.until else f"{keys} {self.seconds:g}"
+
+
+UNTIL_LIMIT = 8.0       # s: an "until" step without its own limit
+
+
+def parse_steps(text: str) -> list[Step]:
+    """"w+d 2, turn 300, w until select world 6, wait 0.5" → Steps. Raises ValueError.
+
+      w+d 2                    hold W and D together for 2 s
+      w until select world 6   hold W until "Select World" shows (at most 6 s)
+      turn 300 / turn -150     turn the camera right / left (mouse counts)
+      wait 0.5                 do nothing for 0.5 s
+    """
     steps = []
     for part in (text or "").split(","):
-        part = part.strip()
+        part = " ".join(part.strip().lower().split())
         if not part:
             continue
-        match = re.fullmatch(r"([a-z+ ]+?)\s+(\d+(?:\.\d+)?)\s*s?", part.lower())
-        if not match:
-            raise ValueError(f"'{part}' should look like 'w+d 2' (keys, then seconds)")
-        keys = tuple(k.strip() for k in match.group(1).split("+") if k.strip())
+        turn = re.fullmatch(r"turn\s+(-?\d+)", part)
+        if turn:
+            counts = int(turn.group(1))
+            if not 0 < abs(counts) <= 5000:
+                raise ValueError(f"'{part}': a turn is 1 to 5000 counts (negative = left)")
+            steps.append(Step(turn=counts))
+            continue
+        wait = re.fullmatch(r"wait\s+(\d+(?:\.\d+)?)\s*s?", part)
+        if wait:
+            seconds = float(wait.group(1))
+            if not 0 < seconds <= 20:
+                raise ValueError(f"'{part}': between 0.1 and 20 seconds")
+            steps.append(Step(seconds=seconds))
+            continue
+        until = re.fullmatch(r"([a-z+ ]+?)\s+until\s+(.+?)(?:\s+(\d+(?:\.\d+)?)\s*s?)?", part)
+        if until:
+            keys_text, target, limit = until.group(1), until.group(2).strip(), until.group(3)
+            seconds = float(limit) if limit else UNTIL_LIMIT
+        else:
+            match = re.fullmatch(r"([a-z+ ]+?)\s+(\d+(?:\.\d+)?)\s*s?", part)
+            if not match:
+                raise ValueError(f"'{part}' should look like 'w+d 2' (keys, then seconds), "
+                                 "'w until select world', 'turn 300' or 'wait 0.5'")
+            keys_text, target, seconds = match.group(1), "", float(match.group(2))
+        keys = tuple(k.strip() for k in keys_text.split("+") if k.strip())
         bad = [k for k in keys if k not in inp.SCAN_CODES]
         if not keys or bad:
             raise ValueError(f"unknown key(s) {', '.join(bad) or '?'} in '{part}'")
-        seconds = float(match.group(2))
         if not 0 < seconds <= 20:
             raise ValueError(f"'{part}': between 0.1 and 20 seconds")
-        steps.append((keys, seconds))
+        steps.append(Step(keys, seconds, target))
     return steps
+
+
+def parse_route(text: str) -> list[tuple[tuple[str, ...], float]]:
+    """The key steps only: "w+d 2, w 1.5" → [(("w", "d"), 2.0), (("w",), 1.5)]. Raises ValueError."""
+    return [(s.keys, s.seconds) for s in parse_steps(text) if s.keys]
 
 
 def find_word(lines: list[OcrLine], word: str, exact: bool = False, threshold: float = 0.75):
@@ -256,37 +309,56 @@ class LobbyStarter:
 
     def _walk_in(self, hwnd: int) -> bool:
         try:
-            route = parse_route(getattr(self.settings, "lobby_walk", "w+d 2"))
+            steps = parse_steps(getattr(self.settings, "lobby_walk", "w+d 2"))
         except ValueError as exc:
             self.log.emit(f"Lobby: the walk in Configs is wrong ({exc}).", "Error")
             self._lobby_failed("no walk")
             return False
-        text = ", ".join("+".join(k.upper() for k in keys) + f" {s:g} s" for keys, s in route)
-        self.log.emit(f"Lobby: walking into the door ({text})", "Info")
+        self.log.emit(f"Lobby: walking into the door ({', '.join(s.text() for s in steps)})", "Info")
         inp.focus(hwnd)
         sprint = getattr(self.settings, "walk_sprint", True)
         if sprint:
             inp.key_down("shift")
         try:
-            for keys, seconds in route:
-                for key in keys:
-                    inp.key_down(key)
-                try:
-                    end = time.monotonic() + seconds
-                    while time.monotonic() < end:
-                        if self.isInterruptionRequested():
-                            return False
-                        if self._inside_door():
-                            self.log.emit("Lobby: in — the stage window is up.", "Info")
-                            return True
-                        time.sleep(0.15)
-                finally:
-                    for key in keys:
-                        inp.key_up(key)
+            for step in steps:
+                result = self._walk_step(step)
+                if result is not None:
+                    return result
         finally:
             if sprint:
                 inp.key_up("shift")
         return True
+
+    def _walk_step(self, step: Step) -> bool | None:
+        """Play one step, timed to the millisecond. True = in (the stage window
+        is up), False = stopped, None = go on with the next step."""
+        if step.turn:
+            inp.turn_camera(step.turn)
+            return None
+        for key in step.keys:
+            inp.key_down(key)
+        try:
+            end = time.perf_counter() + step.seconds
+            while True:
+                left = end - time.perf_counter()
+                if left <= 0:
+                    return None
+                if self.isInterruptionRequested():
+                    return False
+                if self._inside_door():
+                    self.log.emit("Lobby: in — the stage window is up.", "Info")
+                    return True
+                if step.until and self._text_on_screen(step.until):
+                    return None
+                # Short naps; the last one ends exactly on time.
+                inp.precise_sleep(min(0.05, left))
+        finally:
+            for key in step.keys:
+                inp.key_up(key)
+
+    def _text_on_screen(self, text: str) -> bool:
+        det = self.detector.latest
+        return det is not None and any(fuzzy_in(text, l.text, 0.8) for l in det.lines)
 
     def _inside_door(self) -> bool:
         """The world window is up (read by the screen reader, no extra work)."""
