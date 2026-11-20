@@ -12,6 +12,12 @@
   and after a "maxed" recheck, upgrading starts from the top of the list. A short list that didn't
   scroll before is checked again when a unit is placed.
 - Going back to the top is checked; if the list didn't move up, it's scrolled up again.
+- **Scrolls are now checked on the picture, not only the text.** Text reading misses a lot on the
+  Unit Overview (on a real Infinity Castle screenshot: 4 of 6 "First" buttons, one unit name), so
+  the cards' picture is compared before and after each scroll (small blocks, brightness evened out:
+  a scroll changes 80–95 % of the blocks, the game moving behind the see-through panel ~35 % at
+  most). Only when the picture can't tell does the text decide. Checked on real screenshots, even
+  with no card text read at all.
 
 **New**
 - **Record your play, MAACRO plays it back** (Settings → *Your own play*, off until you switch it

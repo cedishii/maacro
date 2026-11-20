@@ -20,8 +20,11 @@ only moves the list:
 - once the whole list has come up empty in a row, MacroThread decides "all
   maxed" as before (and checks again later).
 
-Whether the list moved is told from the unit cards only: each card's "First"
-button and the unit name next to it. The panel is see-through, so the game's
+Whether the list moved is told first from the picture of the cards (the
+portraits, buttons and frames are solid; compared in small blocks with the
+brightness evened out, so the game moving behind the panel only changes a
+few blocks while a scroll changes most of them). When the picture can't tell,
+the text decides: each card's "First" button and the unit name next to it. The panel is see-through, so the game's
 own text behind it (enemy counts, buffs…) is read too and changes on every
 read — it's left out, or the bottom of the list would never be noticed and
 the macro would keep scrolling down. A small misread (one name, one missing
@@ -38,6 +41,9 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from difflib import SequenceMatcher
+
+import cv2
+import numpy as np
 
 from .control import input as inp
 from .placement import find_green_buttons
@@ -58,6 +64,37 @@ REOPEN_GAP = 3.0            # s without the manager = it was closed and opened a
 MOVED = 6                   # px a "First" button must shift to count as scrolled
 MAX_STEPS = 12              # steps down before going back to the top (bottom not found yet)
 UP_RETRIES = 2              # tries more when the list didn't go back up
+
+
+# Picture check: share of blocks that changed. A scroll changes 0.8+ of them
+# (one row on screens/20 and ic_03: 0.8 / 0.91), the game behind the panel
+# at most ~0.35 (every dark pixel swapped); between the two the text decides.
+PICTURE_MOVED = 0.6
+PICTURE_SAME = 0.3
+SIG_W, SIG_H, BLOCK = 48, 64, 4
+
+
+def list_signature(frame, title: OcrLine):
+    """A small brightness-evened grey picture of the cards under the title."""
+    if frame is None:
+        return None
+    height, width = frame.shape[:2]
+    x0, x1 = int(title.x - 0.45 * title.w), int(title.x + 1.45 * title.w)
+    y0, y1 = int(title.y + 2 * title.h), int(title.y + title.h + 1.95 * title.w)
+    crop = frame[max(0, y0):min(height, y1), max(0, x0):min(width, x1)]
+    if crop.shape[0] < SIG_H or crop.shape[1] < SIG_W:
+        return None
+    grey = cv2.cvtColor(np.ascontiguousarray(crop[..., :3]), cv2.COLOR_BGR2GRAY)
+    small = cv2.resize(grey, (SIG_W, SIG_H), interpolation=cv2.INTER_AREA).astype(np.float32)
+    return (small - small.mean()) / (small.std() + 1e-3) * 40
+
+
+def picture_change(before, after) -> float | None:
+    """Share of blocks that changed between two signatures (None = can't tell)."""
+    if before is None or after is None or before.shape != after.shape:
+        return None
+    diff = np.abs(before - after).reshape(SIG_H // BLOCK, BLOCK, SIG_W // BLOCK, BLOCK).mean(axis=(1, 3))
+    return float((diff > 14).mean())
 
 
 def overview_title(lines: list[OcrLine]) -> OcrLine | None:
@@ -159,6 +196,7 @@ class ScrollState:
     most_steps: int = 0             # steps to the bottom, once it was found
     empty_run: int = 0              # parts in a row with nothing to upgrade
     before: tuple = ([], [])        # card marks before the last scroll
+    before_sig: object = None       # picture of the cards before the last scroll
     checking: bool = False          # the last scroll down isn't read yet
     going_up: bool = False          # the last scroll to the top isn't read yet
     up_tries: int = 0
@@ -194,6 +232,21 @@ class ScrollingUpgrades:
             if st.scrollable is False:
                 st.scrollable = None                # the new unit may make it scroll
 
+    def _list_moved(self, st: ScrollState, lines: list[OcrLine], title: OcrLine) -> bool:
+        """Did the last scroll move the list? The picture first, then the text."""
+        _, frame = self.capture.latest_frame()
+        change = picture_change(st.before_sig, list_signature(frame, title))
+        if change is not None and change >= PICTURE_MOVED:
+            return True
+        if change is not None and change <= PICTURE_SAME:
+            return False
+        return list_moved(st.before, card_marks(lines, title))
+
+    def _remember_list(self, st: ScrollState, lines: list[OcrLine], title: OcrLine) -> None:
+        st.before = card_marks(lines, title)
+        _, frame = self.capture.latest_frame()
+        st.before_sig = list_signature(frame, title)
+
     def _settled(self, st: ScrollState, now: float) -> bool:
         fresh = getattr(self.detector, "latest_count", 0) >= st.reads + 2
         return not (now - st.since < SETTLE or (not fresh and now - st.since < 5))
@@ -224,7 +277,7 @@ class ScrollingUpgrades:
             if not self._settled(st, now):
                 return
             st.going_up = False
-            if st.up_tries < UP_RETRIES and not list_moved(st.before, card_marks(det.lines, title)):
+            if st.up_tries < UP_RETRIES and not self._list_moved(st, det.lines, title):
                 st.up_tries += 1
                 self.log.emit("The unit list didn't go back to the top — scrolling up again.", "Info")
                 self._scroll_to_top(hwnd, title, det.lines)
@@ -236,7 +289,7 @@ class ScrollingUpgrades:
                 return                              # still scrolling / not read since
             st.checking = False
             limit = st.most_steps + 2 if st.most_steps else MAX_STEPS
-            if not list_moved(st.before, card_marks(det.lines, title)) or st.steps >= limit:
+            if not self._list_moved(st, det.lines, title) or st.steps >= limit:
                 if st.steps == 0:
                     st.scrollable, st.probed_at = False, now     # nothing below: leave it
                 else:
@@ -281,7 +334,7 @@ class ScrollingUpgrades:
 
     def _scroll_down(self, hwnd: int, title: OcrLine, lines: list[OcrLine]) -> None:
         st = self._scroll
-        st.before = card_marks(lines, title)
+        self._remember_list(st, lines, title)
         st.checking, st.since = True, time.monotonic()
         st.reads = getattr(self.detector, "latest_count", 0)
         self.match.no_upgrade_reads = 0
@@ -295,7 +348,7 @@ class ScrollingUpgrades:
         st = self._scroll
         deep = max(st.steps, st.most_steps) + 2
         notches = max(TOP_NOTCHES, deep * SCROLL_NOTCHES * 2)
-        st.before = card_marks(lines or [], title)
+        self._remember_list(st, lines or [], title)
         st.going_up = verify and (st.steps > 0 or st.up_tries > 0)
         st.checking = False
         st.steps, st.since = 0, time.monotonic()
