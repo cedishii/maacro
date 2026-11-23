@@ -39,6 +39,10 @@
   with no card text read at all.
 
 **New**
+- **Lobby Play button (update 21.5).** Play opens "Where do you want to Play?" (Summer Event / Misty
+  Village / Regular Stages). Misty Village and Story / Infinite (Regular Stages) now go that way;
+  the Areas window is the fallback when the Play window doesn't open, and stays the way for
+  Challenges.
 - **Misty Village: the village shop is closed when it pops up**, with the red X next to its title
   (found by colour, `close_x.py`). Never while the unit manager is open, and never an X the size
   of the unit cards' ones (those sell the unit).

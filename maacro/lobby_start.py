@@ -30,6 +30,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from .close_x import close_button
 from .control import input as inp
 from .vision.ocr import OcrLine
 from .vision.screens import _norm, fuzzy_in
@@ -38,6 +39,7 @@ from .vision.screens import _norm, fuzzy_in
 AREAS_SPOT = (0.966, 0.856)
 AREAS_REGION = (0.88, 0.62, 1.0, 0.96)             # x0, y0, x1, y1: the right-hand buttons
 POPUP_REGION = (0.15, 0.05, 0.85, 0.95)            # the middle: popups and the world / stage windows
+PLAY_REGION = (0.0, 0.25, 0.14, 0.75)              # the lobby buttons on the left (Units, Store, Play…)
 # The area tiles, from the "Areas (Click to Teleport)" title: (dx, dy) × the title's width.
 TILE_FROM_TITLE = {"challenges": (-0.15, 0.93), "play area": (0.53, 0.56)}
 WAIT_FOR_MATCH = 90      # s after the last step before the try counts as failed
@@ -155,11 +157,24 @@ def tile_spot(title: OcrLine, tile: str) -> tuple[float, float]:
     return title.x + title.w / 2 + dx * title.w, title.y + title.h / 2 + dy * title.w
 
 
+def chooser_tile(lines: list[OcrLine], tile: str, header: OcrLine):
+    """The tile in the "Where do you want to Play?" window. Its names are on
+    two lines ("Misty" / "Village"): the first word below the header is enough."""
+    below = [l for l in lines if l.y > header.y + header.h]
+    found = find_word(below, tile, threshold=0.75)
+    if found is not None:
+        return found
+    first = tile.split()[0]
+    return find_word(below, first, exact=True) or find_word(below, first, threshold=0.8)
+
+
 class LobbyStarter:
     """Mixin for Story / Infinite / Challenge (GeneralThread subclasses).
     Subclasses set AREA_TILE and LOBBY_KIND and, for Story / Infinite, the
-    stage to pick (`_stage_choice`)."""
+    stage to pick (`_stage_choice`). PLAY_TILE: the tile in the lobby Play
+    window ("" = not there, go by Areas)."""
     AREA_TILE = "play area"
+    PLAY_TILE = "regular stages"
     LOBBY_KIND = "story"
 
     # --- reading the screen ------------------------------------------------
@@ -267,8 +282,12 @@ class LobbyStarter:
         return self.capture.hwnd or 0
 
     def _start_from_lobby(self, hwnd: int) -> None:
+        # 1. Play → "Where do you want to Play?" → this mode's tile (update
+        #    21.5); the Areas window when there's no tile for it or it fails.
+        if self.PLAY_TILE and self._play_chooser(hwnd):
+            self._after_area(hwnd)
+            return
         width, height = self._frame_wh()
-        # 1. Areas → the area tile.
         title = find_word(self._read(), "areas click to teleport", threshold=0.7)
         if title is None:
             button = find_word(self._read(AREAS_REGION), "areas", exact=False, threshold=0.6)
@@ -285,6 +304,10 @@ class LobbyStarter:
             return
         if not self._open_area_tile(hwnd, title):
             return
+        self._after_area(hwnd)
+
+    def _after_area(self, hwnd: int) -> None:
+        """After the teleport: walk in, pick the stage, Start, wait for the match."""
         # 2. The teleport, then the walk into a door.
         if not self._sleep(max(2.5, getattr(self.settings, "teleport_wait", 2.5) + 1.0)):
             return
@@ -299,6 +322,31 @@ class LobbyStarter:
             self._click(hwnd, start, "Start")
         self._lobby_started_at = time.monotonic()
         self._say("Lobby: waiting for the match to start")
+
+    def _play_chooser(self, hwnd: int) -> bool:
+        """Lobby Play button → "Where do you want to Play?" → PLAY_TILE.
+        False (nothing pressed in the window) when it doesn't open."""
+        header = find_word(self._read(), "where do you want to play", threshold=0.7)
+        if header is None:
+            button = find_word(self._read(PLAY_REGION), "play", exact=True)
+            if button is None:
+                return False
+            self._click(hwnd, button, "Play")
+            header = self._wait_for(lambda lines: find_word(lines, "where do you want to play", threshold=0.7), 4)
+        if header is None:
+            self.log.emit("Lobby: the 'Where do you want to Play?' window didn't open — using Areas.", "Info")
+            return False
+        tile = self._wait_for(lambda lines: chooser_tile(lines, self.PLAY_TILE, header), 3)
+        if tile is None:
+            self.log.emit(f"Lobby: '{self.PLAY_TILE.title()}' not read in the Play window — using Areas.", "Warn")
+            close = close_button(self.capture.latest_frame()[1], header)
+            if close is not None:
+                inp.click(hwnd, *close)
+                self._park_mouse(hwnd)
+                self._sleep(0.5)
+            return False
+        self._click(hwnd, tile, self.PLAY_TILE.title())
+        return True
 
     def _open_area_tile(self, hwnd: int, title: OcrLine) -> bool:
         """Click this mode's tile in the Areas window (False = gave up)."""

@@ -201,6 +201,7 @@ class InfiniteThread(StagePicker, GeneralThread):
 
 class ChallengeThread(LobbyStarter, GeneralThread):
     AREA_TILE, LOBBY_KIND = "challenges", "challenge"
+    PLAY_TILE = ""                      # not in the Play window: Areas → Challenges
 
     INTRO = ("Challenge mode — plays the challenge, then Replay if the game offers it, otherwise "
              "Return to lobby (lobby Actions can walk you to the next one).")

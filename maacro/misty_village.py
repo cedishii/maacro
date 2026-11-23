@@ -124,6 +124,7 @@ def stage_of(map_name: str | None) -> str | None:
 
 class MistyVillageThread(LobbyStarter, GeneralThread):
     AREA_TILE, LOBBY_KIND = "misty village", "misty"
+    PLAY_TILE = "misty village"
     INTRO = ("Misty Village — goes there from the lobby (Areas → Misty Village → walk right), plays "
              "Night stages whenever they're open (20 waves), otherwise Day (15 waves), and Replays; "
              "back to the lobby to switch when night opens or ends.")
