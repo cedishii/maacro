@@ -37,7 +37,7 @@ from .general.controller import LOBBY_WORDS, REPLAY_WORDS, GeneralThread
 from .macro import MacroThread
 from .close_x import close_button
 from .control import input as inp
-from .lobby_start import POPUP_REGION, LobbyStarter, find_word, parse_steps
+from .lobby_start import POPUP_REGION, WAIT_FOR_MATCH, LobbyStarter, find_word, parse_steps
 from .vision.ocr import OcrLine
 from .vision.screens import _norm, fuzzy_in
 
@@ -103,13 +103,26 @@ def stages_window(lines: list[OcrLine]) -> OcrLine | None:
 
 
 def shop_title(lines: list[OcrLine], height: int) -> OcrLine | None:
-    """The village shop's title: "Village Shop" (closely read). Nothing else
-    with "shop" in it counts (a false close was seen at an end screen)."""
+    """A shop popup's title: "Village Shop" or "Exclusive Shop" (seen live over
+    the stage window, with Robux Purchase buttons). Nothing else with "shop" in
+    it counts (a false close was seen at an end screen)."""
     for line in lines:
         text = _norm(line.text)
-        if "villageshop" in text or (len(text) <= 16 and fuzzy_in("village shop", line.text, 0.85)):
+        if any(name in text for name in SHOP_NAMES) or (
+                len(text) <= 16 and fuzzy_in("village shop", line.text, 0.85)):
             return line
     return None
+
+
+SHOP_NAMES = ("villageshop", "exclusiveshop")
+# The stage window ("Misty Village (Unit Level: 100+)", Clear Rewards, Friends
+# Only, Select / Cancel). It has a "Level Info" button, which the screen reader
+# takes for a match: seen live, it placed units on the lobby for 8 minutes.
+STAGE_WINDOW_WORDS = ("unitlevel", "friendsonly", "clearrewards")
+
+
+def stage_window_up(lines: list[OcrLine]) -> bool:
+    return sum(any(w in _norm(l.text) for l in lines) for w in STAGE_WINDOW_WORDS) >= 2
 
 
 def stage_of(map_name: str | None) -> str | None:
@@ -160,6 +173,14 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
         else:
             self._night_opens_at, self._night_closes_at = now + seconds, 0.0
 
+    def _after_pressed(self, label: str, words) -> None:
+        # Logged here, when it's really done (the after-match choice is also
+        # asked now and then by the main page, e.g. for the rejoin watch).
+        if "lobby" in _norm(label) and getattr(self, "_switch_note", ""):
+            self.log.emit(f"Misty Village: {self._switch_note}", "Info")
+        self._switch_note = ""
+        super()._after_pressed(label, words)
+
     def _current_stage(self) -> str | None:
         return stage_of(getattr(self.detector.tracker, "map_name", None)) or self._stage
 
@@ -178,14 +199,40 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
         stage = self._current_stage()
         now = time.time()
         if stage == "day" and self._night_open_now(now):
-            if self._cooldown("misty_to_night", 60):
-                self.log.emit("Misty Village: Night is open now — back to the lobby to play Night.", "Info")
+            self._switch_note = "Night is open now — back to the lobby to play Night."
             return LOBBY_WORDS
         if stage == "night" and self._night_closes_at and now >= self._night_closes_at - NIGHT_MIN_LEFT:
-            if self._cooldown("misty_to_day", 60):
-                self.log.emit("Misty Village: Night is ending — back to the lobby to play Day.", "Info")
+            self._switch_note = "Night is ending — back to the lobby to play Day."
             return LOBBY_WORDS
         return REPLAY_WORDS + LOBBY_WORDS
+
+    # --- not a match: the stage window is still up ---------------------------
+    def _on_in_match(self, hwnd: int) -> None:
+        if self._still_in_lobby(hwnd):
+            return
+        super()._on_in_match(hwnd)
+
+    def _on_unit_manager(self, hwnd: int) -> None:
+        if self._still_in_lobby(hwnd):
+            return
+        super()._on_unit_manager(hwnd)
+
+    def _still_in_lobby(self, hwnd: int) -> bool:
+        """The stage window is on screen: no placing or upgrading (it would
+        click the lobby). Waits for the match; after WAIT_FOR_MATCH s, Cancel
+        and start over."""
+        det = self.detector.latest
+        if det is None or not stage_window_up(det.lines):
+            return False
+        now = time.monotonic()
+        since = getattr(self, "_lobby_started_at", None) or getattr(self, "_stage_window_since", None)
+        if since is None:
+            self._stage_window_since = since = now
+        self._say("Lobby: waiting for matchmaking (the stage window is up)", log=False)
+        if now - since > WAIT_FOR_MATCH:
+            self._stage_window_since = None
+            self._lobby_failed("no match started from the stage window")    # presses Cancel
+        return True
 
     # --- the village shop ----------------------------------------------------
     def _close_chat(self, hwnd: int, det) -> bool:

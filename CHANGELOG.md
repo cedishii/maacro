@@ -3,6 +3,12 @@
 ## Unreleased
 
 **Fixed**
+- **Misty Village: no "placing" on the lobby.** The stage window has a "Level Info" button, which the
+  screen reader takes for a match; when no match started after the captcha, MAACRO pressed hotbar
+  keys and clicked the lobby for 8 minutes while an Exclusive Shop (Robux Purchase buttons) was
+  open. With the stage window up it now only waits, and after 90 s presses Cancel and starts over.
+  "Exclusive Shop" is closed like the village shop, before anything else. The "back to the lobby
+  for Night/Day" note is only logged when it's really done.
 - **Stray clicks in the unit list.** Upgrade clicks could land while the list was still moving
   (right after the jump to the top) or while the panel was sliding back in after the card-pick
   peek, opening a unit's panel or its targeting menu. Clicks now wait until the list and the panel
