@@ -160,7 +160,11 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
         self._night_opens_at = 0.0     # wall clock (time.time()); 0 = not known
         self._night_closes_at = 0.0
         back = getattr(self.settings, "misty_after", "lobby") != "replay"
-        if getattr(self.settings, "day_only", False):
+        if getattr(self, "party_member", False):
+            self.INTRO = ("Misty Village as a party member — places and upgrades your units, closes the "
+                          "village shop, and waits for the party leader to start each game (lobby, stage "
+                          "and Find Match are the leader's).")
+        elif getattr(self.settings, "day_only", False):
             self.log.emit("Misty Village: Day stages only.", "Info")
             self.INTRO = ("Misty Village — goes there from the lobby (Play → Misty Village → walk right) "
                           "and plays the Day stage every time (15 waves), then "
@@ -256,6 +260,8 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
         if since is None:
             self._stage_window_since = since = now
         self._say("Lobby: waiting for matchmaking (the stage window is up)", log=False)
+        if getattr(self, "party_member", False):
+            return True                     # the leader's window: never Cancel it
         if now - since > WAIT_FOR_MATCH:
             self._stage_window_since = None
             self._lobby_failed("no match started from the stage window")    # presses Cancel

@@ -45,8 +45,8 @@ MODES = (
          supports_party=False),
     Mode("challenge", "Challenge (Replay or back to the lobby)", ChallengeThread, ChallengeConfig,
          supports_party=False),
-    Mode("misty_village", "Misty Village (Night when open, else Day)", MistyVillageThread, MistyConfig,
-         supports_party=False),
+    # Party Member: plays the match; the leader does the lobby, stage and Find Match.
+    Mode("misty_village", "Misty Village (Night when open, else Day)", MistyVillageThread, MistyConfig),
     Mode("general", "Any Stage (legend, raid, portal…)", GeneralThread, GeneralConfig,
          supports_party=False),
     # Always a party member: waits for the leader and the vote, then plays.

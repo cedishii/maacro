@@ -400,6 +400,8 @@ class MainPage(QWidget):
         for thread in self.macros.values():
             if hasattr(thread, "set_behavior"):
                 thread.set_behavior(key)
+        if hasattr(self, "day_only_box"):
+            self.day_only_box.setEnabled(key != PARTY)      # the leader picks the stage
         index = self.behavior_box.findData(key)
         if self.behavior_box.currentIndex() != index:
             self.behavior_box.setCurrentIndex(index)
@@ -464,6 +466,7 @@ class MainPage(QWidget):
             self.cards_row.setVisible(key == "summer")
         if hasattr(self, "day_only_box"):
             self.day_only_box.setVisible(key == "misty_village")
+            self.day_only_box.setEnabled(getattr(self, "behavior", None) != PARTY)  # the leader picks
         self.log_panel.log(f"Mode: {BY_KEY[key].label}.")
         if hasattr(self, "behavior_box"):
             # A mode without party support just ignores the role (kept for the others).
