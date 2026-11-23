@@ -39,6 +39,13 @@
   with no card text read at all.
 
 **New**
+- **Misty Village mode** (update 21.5). From the lobby: Areas → scrolls to Misty Village → walks right
+  (D 5 s, then S 0.5 s if the stages window didn't pop up) → **Night** stage whenever it's open
+  ("Dawn breaks in …"), otherwise **Day** ("Night falls in …"; misread digits like "51:oq" are
+  handled) → Select → Find Match and the captcha with the player's own matchmaking code. After a
+  match: Replay, but back to the lobby to switch to Night when it opens, or to Day when dawn comes.
+  **Day stages only** on its Configs tab plays Day every time. Tested live: lobby route, Day pick,
+  Select, a 15-wave win with placing and scrolling upgrades, Return to lobby, and back in.
 - **MAACRO notices when it was updated.** Stopping and starting (F3 / F1) keeps running the code
   that was loaded when MAACRO opened, so an update did nothing until MAACRO was closed and opened
   again. Now Start says so and offers **Restart now** (the new copy waits for the old one to close;

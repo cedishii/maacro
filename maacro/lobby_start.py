@@ -41,7 +41,7 @@ POPUP_REGION = (0.15, 0.05, 0.85, 0.95)            # the middle: popups and the 
 # The area tiles, from the "Areas (Click to Teleport)" title: (dx, dy) × the title's width.
 TILE_FROM_TITLE = {"challenges": (-0.15, 0.93), "play area": (0.53, 0.56)}
 WAIT_FOR_MATCH = 90      # s after the last step before the try counts as failed
-FAIL_WAIT = {"story": 30, "infinite": 30, "challenge": 300}   # s before trying again after a failure
+FAIL_WAIT = {"story": 30, "infinite": 30, "challenge": 300, "misty": 30}   # s before trying again after a failure
 SCROLL_TRIES = 12        # scrolls of a list looking for the map / act
 SHOTS_DIR = Path(__file__).resolve().parents[1] / "logs" / "lobby"
 KEEP_SHOTS = 20
@@ -283,15 +283,8 @@ class LobbyStarter:
         if title is None:
             self._lobby_failed("the Areas window didn't open")
             return
-        tile = find_word(self._read(), self.AREA_TILE, threshold=0.6)
-        if tile is not None and abs(tile.y - title.y) > title.h:      # not the title itself
-            self._click(hwnd, tile, self.AREA_TILE.title())
-        else:
-            x, y = tile_spot(title, self.AREA_TILE)
-            self.log.emit(f"Lobby: clicking {self.AREA_TILE.title()} (its usual place)", "Info")
-            inp.focus(hwnd)
-            inp.click(hwnd, x, y)
-            self._park_mouse(hwnd)
+        if not self._open_area_tile(hwnd, title):
+            return
         # 2. The teleport, then the walk into a door.
         if not self._sleep(max(2.5, getattr(self.settings, "teleport_wait", 2.5) + 1.0)):
             return
@@ -306,6 +299,32 @@ class LobbyStarter:
             self._click(hwnd, start, "Start")
         self._lobby_started_at = time.monotonic()
         self._say("Lobby: waiting for the match to start")
+
+    def _open_area_tile(self, hwnd: int, title: OcrLine) -> bool:
+        """Click this mode's tile in the Areas window (False = gave up)."""
+        tile = find_word(self._read(), self.AREA_TILE, threshold=0.6)
+        if tile is not None and abs(tile.y - title.y) > title.h:      # not the title itself
+            self._click(hwnd, tile, self.AREA_TILE.title())
+        else:
+            x, y = tile_spot(title, self.AREA_TILE)
+            self.log.emit(f"Lobby: clicking {self.AREA_TILE.title()} (its usual place)", "Info")
+            inp.focus(hwnd)
+            inp.click(hwnd, x, y)
+            self._park_mouse(hwnd)
+        return True
+
+    def _scroll_find(self, hwnd: int, finder, region, anchor_xy, what: str):
+        """Find with finder(lines), scrolling down over anchor_xy between reads."""
+        for attempt in range(SCROLL_TRIES + 1):
+            found = finder(self._read(region))
+            if found is not None:
+                return found
+            if attempt == SCROLL_TRIES or self.isInterruptionRequested():
+                break
+            inp.scroll(hwnd, anchor_xy[0], anchor_xy[1], 3)
+            self._sleep(0.5)
+        self.log.emit(f"Lobby: couldn't find {what} in the list.", "Warn")
+        return None
 
     def _walk_in(self, hwnd: int) -> bool:
         try:
@@ -375,19 +394,6 @@ class StagePicker(LobbyStarter):
     def _stage_choice(self) -> tuple[str, str, str]:
         """(world, act "1"–"6" or "infinite", difficulty "normal" / "hard")."""
         raise NotImplementedError
-
-    def _scroll_find(self, hwnd: int, finder, region, anchor_xy, what: str):
-        """Find with finder(lines), scrolling down over anchor_xy between reads."""
-        for attempt in range(SCROLL_TRIES + 1):
-            found = finder(self._read(region))
-            if found is not None:
-                return found
-            if attempt == SCROLL_TRIES or self.isInterruptionRequested():
-                break
-            inp.scroll(hwnd, anchor_xy[0], anchor_xy[1], 3)
-            self._sleep(0.5)
-        self.log.emit(f"Lobby: couldn't find {what} in the list.", "Warn")
-        return None
 
     def _lobby_ready(self) -> bool:
         if not super()._lobby_ready():

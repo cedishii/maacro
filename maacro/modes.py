@@ -16,6 +16,7 @@ from .general.controller import GeneralThread
 from .infinity_castle.config import InfinityConfig
 from .infinity_castle.controller import InfinityCastleThread
 from .macro import MacroThread
+from .misty_village import MistyConfig, MistyVillageThread
 from .party import BEHAVIORS, SOLO
 from .summer_config import SummerConfig
 from .sky_portal.config import SkyPortalConfig
@@ -44,6 +45,8 @@ MODES = (
          supports_party=False),
     Mode("challenge", "Challenge (Replay or back to the lobby)", ChallengeThread, ChallengeConfig,
          supports_party=False),
+    Mode("misty_village", "Misty Village (Night when open, else Day)", MistyVillageThread, MistyConfig,
+         supports_party=False),
     Mode("general", "Any Stage (legend, raid, portal…)", GeneralThread, GeneralConfig,
          supports_party=False),
     # Always a party member: waits for the leader and the vote, then plays.
@@ -58,7 +61,8 @@ NICKNAMES = {"summer": "summer", "event": "summer", "castle": "infinity_castle",
              "infinity": "infinity_castle", "story": "story", "acts": "story", "infinite": "infinite",
              "inf": "infinite", "endless": "infinite", "challenge": "challenge", "challenges": "challenge",
              "any": "general", "general": "general", "anystage": "general", "legend": "general",
-             "raid": "general", "portal": "general", "sky": "sky_portal", "skyportal": "sky_portal"}
+             "raid": "general", "portal": "general", "misty": "misty_village", "village": "misty_village",
+             "night": "misty_village", "day": "misty_village", "sky": "sky_portal", "skyportal": "sky_portal"}
 
 
 def find_mode(text: str) -> str | None:

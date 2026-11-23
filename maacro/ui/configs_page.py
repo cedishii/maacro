@@ -20,6 +20,7 @@ from ..infinity_castle.config import InfinityConfig
 from .. import profiles
 from ..summer_config import SummerConfig
 from ..sky_portal.config import SkyPortalConfig
+from ..misty_village import MistyConfig
 from ..stage_modes import ChallengeConfig, InfiniteConfig, StoryConfig
 from . import theme
 from .widgets import panel
@@ -287,9 +288,10 @@ class ModeSettings(QWidget):
         """lobby: {"tile": "Play Area" / "Challenges", "stage": True for the
         map / act / difficulty fields, "acts": include the Act / Difficulty boxes}."""
         box, box_layout = panel("Start from the lobby")
-        steps = (f"Areas → {lobby['tile']} → walk into a door"
-                 + (" → the map → " + ("Act / difficulty" if lobby.get("acts") else "Infinite") + " → Select"
-                    if lobby.get("stage") else "") + " → Start (if shown) → play.")
+        steps = lobby.get("steps") or (
+            f"Areas → {lobby['tile']} → walk into a door"
+            + (" → the map → " + ("Act / difficulty" if lobby.get("acts") else "Infinite") + " → Select"
+               if lobby.get("stage") else "") + " → Start (if shown) → play.")
         box_layout.addWidget(QLabel(f"In the lobby, MAACRO goes there itself: {steps} If a step fails it "
                                     "presses Cancel and tries again a bit later.", objectName="Muted",
                                     wordWrap=True))
@@ -698,6 +700,15 @@ class ConfigsPage(QWidget):
                 ("none", "Leave it to me"),
             ]),
         }, mode_key="challenge", lobby={"tile": "Challenges"}), "Challenge")
+        tabs.addTab(ModeSettings(MistyConfig, {
+            **stage_switches,
+            "day_only": "Day stages only (off = Night whenever it's open, Day otherwise)",
+        }, {}, mode_key="misty_village", lobby={
+            "tile": "Misty Village",
+            "steps": ("Areas → scroll to Misty Village → walk right into the stages window (the walk "
+                      "below; S 0.5 s more if it didn't pop up) → Night or Day Stages → Select → Find "
+                      "Match (your captcha code) → play."),
+        }), "Misty Village")
         tabs.addTab(ModeSettings(GeneralConfig, {
             "place_units": "Place units",
             "upgrade_units": "Upgrade units to Max (unit manager, F)",
