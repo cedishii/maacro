@@ -3,6 +3,9 @@
 ## Unreleased
 
 **Fixed**
+- **Misty Village: Find Match pressed even when the window is misread.** Live, "Join Matchmaking?"
+  was up but read as "In match" (the stage window's "Level Info" under it) and nothing was pressed;
+  the window's title now hands it to the player's matchmaking/captcha code whatever the reading.
 - **Misty Village: no "placing" on the lobby.** The stage window has a "Level Info" button, which the
   screen reader takes for a match; when no match started after the captcha, MAACRO pressed hotbar
   keys and clicked the lobby for 8 minutes while an Exclusive Shop (Robux Purchase buttons) was
@@ -45,6 +48,10 @@
   with no card text read at all.
 
 **New**
+- **"No upgrades" per unit** on every Configs tab (was an unclear "Upgrade · priority" tick): the unit
+  is placed and never upgraded; its upgrade priority / cap / wave grey out.
+- **Misty Village: "Day stages only" on the Main page** too (like Summer's card picks), applied
+  right away, even while running.
 - **Play only, never Areas** (Misty Village, Story, Infinite): when the Play window doesn't open or
   the tile isn't found, it tries Play again later instead of opening Areas (Challenge still uses
   Areas → Challenges). The Play button is also found by a close read or its usual place.

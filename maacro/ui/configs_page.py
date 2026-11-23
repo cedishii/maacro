@@ -120,10 +120,11 @@ class UnitCard(QFrame):
         self.place_priority = self._spin(1, 6, "1 = placed first.")
         grid.addWidget(self.placements, 3, 0)
         grid.addWidget(self.place_priority, 3, 1)
-        self.upgrade = QCheckBox("Upgrade · priority")
-        self.upgrade.setToolTip("Untick to place this unit but never upgrade it "
-                                "(needs its name filled in).")
-        grid.addWidget(self.upgrade, 4, 0)
+        grid.addWidget(QLabel("Upgrade priority", objectName="Muted"), 4, 0)
+        self.no_upgrade = QCheckBox("No upgrades")
+        self.no_upgrade.setToolTip("Tick to place this unit but never upgrade it at all "
+                                   "(needs its name filled in).")
+        grid.addWidget(self.no_upgrade, 4, 1)
         self.upgrade_priority = self._spin(1, 6, "1 = upgraded first.")
         grid.addWidget(self.upgrade_priority, 5, 0)
         self.path = None
@@ -163,7 +164,7 @@ class UnitCard(QFrame):
             row.addWidget(self.upgrade_wave)
             grid.addWidget(waves, 7, 1)
         self.enabled.toggled.connect(self._enable)
-        self.upgrade.toggled.connect(lambda _: self._enable(self.enabled.isChecked()))
+        self.no_upgrade.toggled.connect(lambda _: self._enable(self.enabled.isChecked()))
 
     @staticmethod
     def _wave_spin(tip: str) -> QSpinBox:
@@ -181,11 +182,14 @@ class UnitCard(QFrame):
         return spin
 
     def _enable(self, on: bool) -> None:
-        for widget in (self.placements, self.place_priority, self.upgrade, self.path, self.farm, self.cap,
-                       self.place_wave, self.upgrade_wave):
+        for widget in (self.placements, self.place_priority, self.no_upgrade, self.path, self.farm,
+                       self.place_wave):
             if widget is not None:
                 widget.setEnabled(on)
-        self.upgrade_priority.setEnabled(on and self.upgrade.isChecked())
+        upgrades = on and not self.no_upgrade.isChecked()
+        for widget in (self.upgrade_priority, self.cap, self.upgrade_wave):
+            if widget is not None:
+                widget.setEnabled(upgrades)
 
     def set_values(self, values: dict, on_path: bool, farm: bool = False, cap: int = 0,
                    place_wave: int = 0, upgrade_wave: int = 0) -> None:
@@ -194,7 +198,7 @@ class UnitCard(QFrame):
         self.placements.setValue(values["placements"])
         self.place_priority.setValue(min(6, values["place_priority"]))
         self.upgrade_priority.setValue(min(6, values["upgrade_priority"]))
-        self.upgrade.setChecked(values.get("upgrade", True))
+        self.no_upgrade.setChecked(not values.get("upgrade", True))
         if self.path is not None:
             self.path.setChecked(on_path)
         if self.farm is not None:
@@ -211,7 +215,7 @@ class UnitCard(QFrame):
                 "placements": self.placements.value(),
                 "place_priority": self.place_priority.value(),
                 "upgrade_priority": self.upgrade_priority.value(),
-                "upgrade": self.upgrade.isChecked()}
+                "upgrade": not self.no_upgrade.isChecked()}
 
 
 class ModeSettings(QWidget):

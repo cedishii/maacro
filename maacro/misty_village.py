@@ -32,7 +32,7 @@ from pathlib import Path
 
 from .config import MacroConfig
 from .general.config import GeneralConfig
-from .find_match import FindMatchSpot
+from .find_match import FindMatchSpot, matchmaking_title
 from .general.controller import LOBBY_WORDS, REPLAY_WORDS, GeneralThread
 from .macro import MacroThread
 from .close_x import close_button
@@ -237,10 +237,25 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
     # --- the village shop ----------------------------------------------------
     def _close_chat(self, hwnd: int, det) -> bool:
         """Every loop (before the screen's own step): close the village shop
-        if it popped up, then the usual chat check."""
+        if it popped up; "Join Matchmaking?" read as another screen still goes
+        to the matchmaking code; then the usual chat check."""
         if self._close_village_shop(hwnd, det):
             return True
+        if (det is not None and det.screen != "join_matchmaking" and matchmaking_title(det.lines) is not None
+                and not any("enterthistext" in _norm(l.text) for l in det.lines)):
+            # Seen live: the window was up, the screen read as "In match" (the
+            # stage window's "Level Info" under it), and Find Match was never pressed.
+            self._on_join_matchmaking(hwnd)
+            return True
         return super()._close_chat(hwnd, det)
+
+    def _fresh(self, screen: str):
+        """The player's matchmaking code checks the screen is "join_matchmaking";
+        with the window's title on screen, it is (whatever the reader called it)."""
+        det = self.detector.latest
+        if screen == "join_matchmaking" and det is not None and matchmaking_title(det.lines) is not None:
+            return det
+        return super()._fresh(screen)
 
     def _close_village_shop(self, hwnd: int, det) -> bool:
         """The village shop pops up now and then: close it with its X. Only

@@ -11,6 +11,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import (
+    QCheckBox,
     QApplication, QComboBox, QFrame, QMessageBox, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSplitter,
     QVBoxLayout, QWidget,
 )
@@ -223,6 +224,14 @@ class MainPage(QWidget):
         self.cards_box.currentIndexChanged.connect(lambda _: self._set_card_strategy(self.cards_box.currentData()))
         cards_layout.addWidget(self.cards_box, 1)
         box_layout.addWidget(self.cards_row)
+        # Misty Village only: Day stages every time (also on Configs → Misty Village).
+        from ..misty_village import MistyConfig
+        self.day_only_box = QCheckBox("Day stages only (off = Night whenever it's open)")
+        self.day_only_box.setToolTip("Misty Village: play the Day stage every time instead of Night "
+                                     "when it's open. Applies right away, even while running.")
+        self.day_only_box.setChecked(MistyConfig.load().day_only)
+        self.day_only_box.toggled.connect(self._set_day_only)
+        box_layout.addWidget(self.day_only_box)
         status_row = QHBoxLayout()
         self.status_dot = QLabel("●")
         self.status_text = QLabel()
@@ -453,11 +462,31 @@ class MainPage(QWidget):
             self.pearls_row.setVisible(key == "summer" or self.stats.pearls > 0)
         if hasattr(self, "cards_row"):
             self.cards_row.setVisible(key == "summer")
+        if hasattr(self, "day_only_box"):
+            self.day_only_box.setVisible(key == "misty_village")
         self.log_panel.log(f"Mode: {BY_KEY[key].label}.")
         if hasattr(self, "behavior_box"):
             # A mode without party support just ignores the role (kept for the others).
             self.behavior_box.setEnabled(BY_KEY[key].supports_party and not self.stats.running)
         self.mode_changed.emit(key)
+
+    def _set_day_only(self, on: bool) -> None:
+        """Save Misty Village's "Day stages only"; a running Misty macro uses it
+        from the next stage pick / after-match choice."""
+        from ..misty_village import MistyConfig
+        config = MistyConfig.load()
+        if config.day_only != on:
+            config.day_only = on
+            try:
+                config.save()
+            except OSError as exc:
+                self.log_panel.log(f"Couldn't save the Day setting: {exc}", "Error")
+                return
+        misty = self.macros.get("misty_village")
+        if misty is not None and getattr(misty, "settings", None) is not None:
+            misty.settings.day_only = on
+        self.log_panel.log("Misty Village: Day stages only." if on else
+                           "Misty Village: Night whenever it's open, Day otherwise.")
 
     def _set_card_strategy(self, value: str) -> None:
         """Save the Summer card-pick style; a running Summer macro uses it from
