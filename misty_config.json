@@ -58,7 +58,7 @@
   "lobby_start": true,
   "lobby_walk": "d 5",
   "lobby_walk_extra": "s 0.5",
-  "day_only": false,
+  "day_only": true,
   "air_units": [
     "4"
   ]

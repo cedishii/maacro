@@ -3,6 +3,11 @@
 ## Unreleased
 
 **Fixed**
+- **Misty Village: Replay wasn't pressed after a win.** F was pressed every 3 s for 80 s to close a
+  unit manager over the end screen (the shop closer's own F undid it; F toggles), Replay was never
+  pressed and the fallback went back to the lobby. Now at most 2 F presses per end screen, then the
+  buttons anyway (they're top middle, the manager is on the right); the shop closer no longer
+  presses F.
 - **Misty Village: the Village Shop at the end of a match is closed** (seen live, it blocked the
   results): X → "LEAVE THE SHOP?" → **Leave** (never Stay), then the usual Return to lobby / Replay.
   With the Unit Overview over it, the manager is closed first (F; no X on a unit card is ever

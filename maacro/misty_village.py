@@ -45,6 +45,7 @@ from .vision.screens import _lobby_menu, _norm, fuzzy_in
 ROOT = Path(__file__).resolve().parents[1]
 MISTY_CONFIG_PATH = ROOT / "misty_config.json"
 WAVES = {"night": 20, "day": 15}
+MANAGER_CLOSE_TRIES = 2      # F presses for a unit manager over the end screens, then carry on
 REPLAY_TRIES = 4             # after-match tries looking for Replay before Return to lobby will do
 FIND_MATCH_EVERY = 6.0       # s between Find Match tries (a missed click isn't repeated every 4 s)
 NIGHT_MIN_LEFT = 6 * 60      # s of night needed to start (or replay) a Night run
@@ -157,6 +158,8 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
         self._night_closes_at = 0.0
         if getattr(self.settings, "day_only", False):
             self.log.emit("Misty Village: Day stages only.", "Info")
+            self.INTRO = ("Misty Village — goes there from the lobby (Play → Misty Village → walk right) "
+                          "and plays the Day stage every time (15 waves), with Replay.")
         super().run()
 
     # --- which stage ---------------------------------------------------------
@@ -247,6 +250,23 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
             self._lobby_failed("no match started from the stage window")    # presses Cancel
         return True
 
+    # --- the unit manager over the end screens -----------------------------------
+    def _close_covering_manager(self, hwnd: int, det) -> bool:
+        """At most MANAGER_CLOSE_TRIES F presses per end screen, then go on with
+        the buttons anyway (Return to lobby / Replay sit top middle, the manager
+        on the right). Seen live: F pressed every 3 s for 80 s, Replay never
+        pressed, and the fallback went back to the lobby."""
+        if getattr(self, "_manager_close_tries", 0) >= MANAGER_CLOSE_TRIES:
+            return False
+        pressed = super()._close_covering_manager(hwnd, det)
+        if pressed:
+            self._manager_close_tries = getattr(self, "_manager_close_tries", 0) + 1
+        return pressed
+
+    def _new_match(self) -> None:
+        super()._new_match()
+        self._manager_close_tries = 0
+
     # --- the village shop ----------------------------------------------------
     def _close_chat(self, hwnd: int, det) -> bool:
         """Every loop (before the screen's own step): close the village shop
@@ -293,12 +313,9 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
         _, frame = self.capture.latest_frame()
         spot = None if manager else close_button(frame, title)
         if manager:
-            # Seen live: the Village Shop at the end of a match, the Unit
-            # Overview over its X. Close the manager first (F; in a match).
-            self.log.emit("The village shop is behind the unit manager — closing the manager first.", "Info")
-            inp.focus(hwnd)
-            inp.press(hwnd, "f")
-            return True
+            # The Unit Overview is over the shop's X: the end-screen step closes
+            # the manager (F); pressing F here too undid it (F toggles; seen live).
+            return False
         if spot is None:
             # Its usual place: right of the "Village Shop!" title (measured live).
             spot = (title.x + 1.085 * title.w, title.y + title.h / 2 + 0.03 * title.w)
