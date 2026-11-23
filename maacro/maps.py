@@ -72,14 +72,19 @@ class MapZones:
         title isn't up yet at the start of a match), from the window size:
         same width ratio, title bar cut off. None if neither works."""
         title = name_box(lines, self.name, frame_h) if self.anchor is not None else None
+        by_size = frame_w / self.size[0]
         if title is not None:
             scale = title[2] / self.anchor[2]
-            if 0.4 < scale < 3.0:
+            # The title read live must agree with the window size, when that's
+            # known: a recording anchored on part of the title ("Misty" of
+            # "Misty Village", 72 px) against the whole title live (174 px)
+            # gave 2.4× and threw every spot off screen (seen in Misty Tower).
+            agrees = self.titlebar is None or abs(scale / by_size - 1) < 0.25
+            if 0.4 < scale < 3.0 and agrees:
                 return scale, title[0] - scale * self.anchor[0], title[1] - scale * self.anchor[1]
         if self.titlebar is None:
             return None
-        scale = frame_w / self.size[0]
-        return scale, 0.0, -self.titlebar * scale
+        return by_size, 0.0, -self.titlebar * by_size
 
     def spots(self, lines: list[OcrLine], frame_w: int, frame_h: int,
               step_fraction: float = 0.045) -> list[tuple[float, float]]:
