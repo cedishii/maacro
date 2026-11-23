@@ -22,6 +22,7 @@ from ..control import input as inp
 from ..macro import MacroThread, narrow_to_words
 from ..card_first import CardFirst
 from ..place_only import PlaceOnlyUnits
+from ..game_auto_upgrade import GameAutoUpgrade
 from ..upgrades import ScrollingUpgrades
 from ..vision.screens import Detection, _norm, fuzzy_in
 from .actions import ActionRunner, actions_from_config
@@ -42,7 +43,7 @@ AFTER_MATCH_EVERY = 20      # s between presses (a second press could cancel a v
 SPOT_AFTER_TRIES = 3        # presses without the button read → its usual spot
 
 
-class GeneralThread(CardFirst, PlaceOnlyUnits, ScrollingUpgrades, MacroThread):   # ScrollingUpgrades: more than 8 units
+class GeneralThread(GameAutoUpgrade, CardFirst, PlaceOnlyUnits, ScrollingUpgrades, MacroThread):   # ScrollingUpgrades: more than 8 units
     ALLOW_LOBBY_PLAY = False
     ALLOW_RETURN_TO_LOBBY = False
     INTRO = ("Any Stage mode — places units, upgrades them and waits. Start a stage "

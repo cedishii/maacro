@@ -73,27 +73,34 @@ def order_text(order: list[str]) -> str:
     return " ".join(parts)
 
 
-class PlacementSpin(QSpinBox):
-    """1–9, then "Max" (as many as the game's counter allows)."""
+class ChoiceBox(QComboBox):
+    """A click-to-pick list of numbers with the spin box's value()/setValue().
+    The mouse wheel never changes it (it scrolls the page instead)."""
 
-    def __init__(self):
+    def __init__(self, choices: list[tuple[int, str]], tip: str = ""):
         super().__init__()
-        self.setRange(1, MAX_PLACEMENTS)
-        self.setToolTip("How many of this unit to place. Max = as many as the game "
-                        "allows (the 0/3 counter on its hotbar slot).")
+        for value, label in choices:
+            self.addItem(label, value)
+        if tip:
+            self.setToolTip(tip)
 
-    def textFromValue(self, value: int) -> str:
-        return "Max" if value >= MAX_PLACEMENTS else str(value)
+    def value(self) -> int:
+        return int(self.currentData())
 
-    def valueFromText(self, text: str) -> int:
-        return MAX_PLACEMENTS if text.strip().lower().startswith("m") else int(text or 1)
+    def setValue(self, value: int) -> None:
+        values = [self.itemData(i) for i in range(self.count())]
+        best = min(range(len(values)), key=lambda i: abs(values[i] - int(value)))
+        self.setCurrentIndex(best)
 
-    def validate(self, text, pos):
-        from PySide6.QtGui import QValidator
-        t = text.strip().lower()
-        if t == "" or "max".startswith(t) or (t.isdigit() and 1 <= int(t) <= MAX_PLACEMENTS):
-            return QValidator.Acceptable if t in ("max",) or t.isdigit() else QValidator.Intermediate, text, pos
-        return QValidator.Invalid, text, pos
+    def wheelEvent(self, event) -> None:
+        event.ignore()
+
+
+def PlacementSpin() -> ChoiceBox:
+    """1–9, then "Max" (as many as the game's counter allows)."""
+    return ChoiceBox([(n, str(n)) for n in range(1, MAX_PLACEMENTS)] + [(MAX_PLACEMENTS, "Max")],
+                     "How many of this unit to place. Max = as many as the game "
+                     "allows (the 0/3 counter on its hotbar slot).")
 
 
 class UnitCard(QFrame):
@@ -142,11 +149,9 @@ class UnitCard(QFrame):
         self.cap = None
         if cap_option:
             grid.addWidget(QLabel("Upgrade up to", objectName="Muted"), 6, 0)
-            self.cap = QSpinBox()
-            self.cap.setRange(0, 12)
-            self.cap.setSpecialValueText("Max")
-            self.cap.setToolTip("Stop upgrading this unit after this many upgrades (the segments "
-                                "on its bar in the Unit Overview). Max = all the way.")
+            self.cap = ChoiceBox([(0, "Max")] + [(n, str(n)) for n in range(1, 13)],
+                                 "Stop upgrading this unit after this many upgrades (the segments "
+                                 "on its bar in the Unit Overview). Max = all the way.")
             grid.addWidget(self.cap, 7, 0)
         self.air = None
         if air_option:
@@ -181,11 +186,8 @@ class UnitCard(QFrame):
         return spin
 
     @staticmethod
-    def _spin(low: int, high: int, tip: str) -> QSpinBox:
-        spin = QSpinBox()
-        spin.setRange(low, high)
-        spin.setToolTip(tip)
-        return spin
+    def _spin(low: int, high: int, tip: str) -> ChoiceBox:
+        return ChoiceBox([(n, str(n)) for n in range(low, high + 1)], tip)
 
     def _enable(self, on: bool) -> None:
         for widget in (self.placements, self.place_priority, self.no_upgrade, self.path, self.farm,
@@ -671,6 +673,7 @@ class ConfigsPage(QWidget):
         tabs.addTab(ModeSettings(SummerConfig, {
             "place_units": "Place units",
             "upgrade_units": "Upgrade units to Max (unit manager, F)",
+            "game_auto_upgrade": "Use the game's auto upgrade (press T; MAACRO doesn't upgrade itself)",
             "auto_card_pick": "Pick cards",
             "auto_vote_start": "Vote Yes on 'Vote start'",
         }, {"card_strategy": ("Card picks", [
@@ -689,6 +692,7 @@ class ConfigsPage(QWidget):
         stage_switches = {
             "place_units": "Place units",
             "upgrade_units": "Upgrade units to Max (unit manager, F)",
+            "game_auto_upgrade": "Use the game's auto upgrade (press T; MAACRO doesn't upgrade itself)",
             "use_map_zones": "Use saved map zones (and the walk some maps need); off = automatic spots, never moves",
             "auto_vote_start": "Vote Yes on 'Vote start'",
             "auto_card_pick": "Pick cards if a card vote shows up (off = wait)",
@@ -728,6 +732,7 @@ class ConfigsPage(QWidget):
         tabs.addTab(ModeSettings(GeneralConfig, {
             "place_units": "Place units",
             "upgrade_units": "Upgrade units to Max (unit manager, F)",
+            "game_auto_upgrade": "Use the game's auto upgrade (press T; MAACRO doesn't upgrade itself)",
             "use_map_zones": "Use saved map zones (and the walk some maps need); off = automatic spots, never moves",
             "auto_vote_start": "Vote Yes on 'Vote start' (off = wait)",
             "auto_card_pick": "Pick cards if a card vote shows up (off = wait)",
@@ -739,6 +744,7 @@ class ConfigsPage(QWidget):
         tabs.addTab(ModeSettings(SkyPortalConfig, {
             "place_units": "Place units",
             "upgrade_units": "Upgrade units to Max (unit manager, F)",
+            "game_auto_upgrade": "Use the game's auto upgrade (press T; MAACRO doesn't upgrade itself)",
             "use_map_zones": "Use the Sky Portal spots (maps/sky_portal); off = automatic spots",
             "auto_vote_start": "Vote Yes on 'Vote start'",
             "auto_card_pick": "Pick cards if a card vote shows up (off = wait)",

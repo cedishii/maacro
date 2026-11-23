@@ -53,6 +53,12 @@
   with no card text read at all.
 
 **New**
+- **The game's auto upgrade (T).** "Use the game's auto upgrade" on Configs (Summer and every Any
+  Stage-based mode): in the unit manager MAACRO presses T until "Auto Upgs Active" shows (T toggles,
+  so never while it's on), then closes it and leaves upgrading to the game for the match. If it
+  doesn't turn on after 3 tries, MAACRO upgrades by itself as before.
+- **Configs boxes are click-to-pick lists** (placements, priorities, upgrade cap), and the mouse
+  wheel never changes a box anywhere in MAACRO: it scrolls the page.
 - **Misty Village: land and air zones.** Day Stage zones from the player's drawings (red = land,
   orange = air; maps/general/misty_village_day.json). Each unit has an **"Air unit"** tick on the
   Misty Village Configs tab: air units go in the orange zones, the rest in the red ones. Maps can be

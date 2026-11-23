@@ -13,6 +13,8 @@ class SummerConfig(MacroConfig):
     # Golem); "hard": red cards first; "smart": Hard, Easy for 2 runs after a
     # defeat. See card_strategy.py.
     card_strategy: str = "easy"
+    # The game's own auto upgrade (T, update 21.5) instead of MAACRO's upgrading.
+    game_auto_upgrade: bool = False
     # Per unit (hotbar key → number; see unit_plan.py): upgrade only up to
     # this many upgrades, and don't place / upgrade before this wave.
     upgrade_caps: dict[str, int] = field(default_factory=dict)

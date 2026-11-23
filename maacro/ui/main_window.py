@@ -69,6 +69,10 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"MAACRO v{__version__}")
+        from PySide6.QtWidgets import QApplication
+        from .widgets import WheelGuard
+        self._wheel_guard = WheelGuard(self)          # the wheel scrolls pages, never changes boxes
+        QApplication.instance().installEventFilter(self._wheel_guard)
         self.resize(1280, 760)
         self.setMinimumSize(1000, 600)
 

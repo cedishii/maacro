@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QRect
+from PySide6.QtCore import QObject, Qt, QRect
 from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import (
     QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit,
@@ -157,3 +157,23 @@ class LogPanel(QFrame):
         for entry in self._entries:
             if self._matches(entry):
                 self._append(entry)
+
+
+class WheelGuard(QObject):
+    """App-wide: the mouse wheel over a spin box or drop-down list scrolls the
+    page instead of changing the value (scrolling down Configs used to change
+    whatever box passed under the mouse)."""
+
+    def eventFilter(self, obj, event) -> bool:
+        from PySide6.QtCore import QEvent
+        from PySide6.QtWidgets import QAbstractScrollArea, QAbstractSpinBox, QApplication, QComboBox
+        if event.type() != QEvent.Type.Wheel or not isinstance(obj, (QAbstractSpinBox, QComboBox)):
+            return False
+        if isinstance(obj, QComboBox) and obj.view().isVisible():
+            return False                     # its open list scrolls as usual
+        area = obj.parent()
+        while area is not None and not isinstance(area, QAbstractScrollArea):
+            area = area.parent()
+        if area is not None:
+            QApplication.sendEvent(area.verticalScrollBar(), event)
+        return True

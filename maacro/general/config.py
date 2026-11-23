@@ -14,6 +14,8 @@ class GeneralConfig(MacroConfig):
     # Use the saved placement zones (and the walk some maps need to line
     # them up). Off: automatic spots, and the character never moves.
     use_map_zones: bool = True
+    # The game's own auto upgrade (T, update 21.5) instead of MAACRO's upgrading.
+    game_auto_upgrade: bool = False
     # Your own "on this screen, click/press this" rules (the Actions page).
     actions: list = field(default_factory=list)
     # After a match: "none" = leave it to you, "replay" = press Replay/Retry,
