@@ -26,3 +26,6 @@ story_config.json
 infinite_config.json
 challenge_config.json
 recordings/
+
+# Map drawings with other players on them (the zones JSON is kept)
+maps/general/misty_village_day_*.png

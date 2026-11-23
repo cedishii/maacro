@@ -52,7 +52,16 @@ class MapZones:
     # --- matching the live screen ---------------------------------------
     def matches(self, text: str) -> bool:
         # 0.75 like name_box: the stylised title reads as e.g. "Rain Mtlage".
-        return fuzzy_in(self.name, text, 0.75)
+        if not fuzzy_in(self.name, text, 0.75):
+            return False
+        # A map named for a time of day (Misty Village Day) never matches the
+        # other one ("Misty Village Night Stage" is a close read otherwise).
+        words, seen = self.name.lower().split(), text.lower()
+        if "day" in words and "night" in seen:
+            return False
+        if "night" in words and "day" in seen and "night" not in seen:
+            return False
+        return True
 
     def transform(self, lines: list[OcrLine], frame_w: int, frame_h: int):
         """(scale, dx, dy) mapping screenshot pixels onto the live frame, from

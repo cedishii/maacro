@@ -53,6 +53,11 @@
   with no card text read at all.
 
 **New**
+- **Misty Village: land and air zones.** Day Stage zones from the player's drawings (red = land,
+  orange = air; maps/general/misty_village_day.json). Each unit has an **"Air unit"** tick on the
+  Misty Village Configs tab: air units go in the orange zones, the rest in the red ones. Maps can be
+  made the same way for other stages (`create_kind_map`, pen colours read from the drawing). A map
+  named for Day never matches the Night stage (and the other way round).
 - **"No upgrades" per unit** on every Configs tab (was an unclear "Upgrade · priority" tick): the unit
   is placed and never upgraded; its upgrade priority / cap / wave grey out.
 - **Misty Village: "Day stages only" on the Main page** too (like Summer's card picks), applied

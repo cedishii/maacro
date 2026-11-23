@@ -24,7 +24,8 @@ from pathlib import Path
 
 import cv2
 
-from ..maps import MAPS_DIR, MapZones, extract_avoid, extract_zones, load_maps, name_box, slugify, titlebar_height
+from ..maps import (MAPS_DIR, MapZones, _fill_outline, extract_avoid, extract_zones, load_maps, name_box, slugify,
+                    titlebar_height)
 from ..vision.ocr import OcrReader
 
 GENERAL_MAPS_DIR = MAPS_DIR / "general"
@@ -79,6 +80,56 @@ def usable_point(x: float, y: float, frame_w: int, frame_h: int) -> bool:
     if not (0.02 * frame_w < x < 0.98 * frame_w and 0.10 * frame_h < y < 0.97 * frame_h):
         return False
     return not (0.31 * frame_w < x < 0.70 * frame_w and y > 0.85 * frame_h)
+
+
+# Pen colours (BGR) for zones drawn per unit kind (Misty Village: land / air).
+PEN_RED, PEN_ORANGE = (27, 27, 230), (0, 85, 255)
+
+
+def extract_pen_zones(image, pen: tuple[int, int, int], tolerance: int = 40) -> list[list[tuple[int, int]]]:
+    """The loops drawn with one pen colour, each filled in (like the white
+    circles). Only big strokes count; the game's own red/orange bits don't."""
+    import numpy as np
+    height, width = image.shape[:2]
+    diff = np.abs(image[..., :3].astype(np.int16) - np.array(pen, np.int16)).max(axis=2)
+    stroke = (diff <= tolerance).astype(np.uint8)
+    stroke[:titlebar_height(image)] = 0
+    stroke = cv2.dilate(stroke, np.ones((3, 3), np.uint8))
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(stroke)
+    zones = []
+    for i in range(1, count):
+        x, y, w, h, _ = stats[i]
+        if (w > 0.05 * width or h > 0.05 * height) and w > 0.025 * width and h > 0.025 * height:
+            zones.append(_fill_outline((labels == i).astype(np.uint8), width, height))
+    return zones
+
+
+def create_kind_map(name: str, shots: list[tuple[str, Path, tuple[int, int, int]]],
+                    ocr: OcrReader | None = None) -> GeneralMap:
+    """A map whose zone sets are for unit kinds, not unit keys:
+    [("land", shot_a, PEN_RED), ("air", shot_b, PEN_ORANGE)]. Which units are
+    which kind is the mode's setting (e.g. Misty Village's "Air unit" ticks)."""
+    reader = ocr or OcrReader()
+    anchor = size = titlebar = None
+    groups = []
+    for kind, shot, pen in shots:
+        image = cv2.imread(str(shot))
+        if image is None:
+            raise ValueError(f"Couldn't open {shot}.")
+        height = image.shape[0]
+        zones = [z for z in extract_pen_zones(image, pen) if min(y for _, y in z) < 0.8 * height]
+        if not zones:
+            raise ValueError(f"No {kind} outlines found in {Path(shot).name}.")
+        groups.append({"units": [kind], "zones": zones})
+        size = size or (image.shape[1], height)
+        titlebar = titlebar if titlebar is not None else titlebar_height(image)
+        anchor = anchor or name_box(reader.read(image), name, height)
+    GENERAL_MAPS_DIR.mkdir(parents=True, exist_ok=True)
+    (GENERAL_MAPS_DIR / f"{slugify(name)}.json").write_text(json.dumps({
+        "name": name, "anchor": list(anchor) if anchor else None, "size": list(size),
+        "titlebar": titlebar, "zone_sets": groups,
+    }, indent=2), encoding="utf-8")
+    return next(m for m in load_general_maps() if m.name == name)
 
 
 def _polygons(raw) -> list[list[tuple[int, int]]]:

@@ -100,7 +100,7 @@ class UnitCard(QFrame):
     """Settings for one hotbar slot."""
 
     def __init__(self, key: str, path_option: bool, farm_option: bool = False, cap_option: bool = False,
-                 wave_option: bool = False, parent=None):
+                 wave_option: bool = False, parent=None, air_option: bool = False):
         super().__init__(parent)
         self.setObjectName("Card")
         self.key = key
@@ -148,6 +148,12 @@ class UnitCard(QFrame):
             self.cap.setToolTip("Stop upgrading this unit after this many upgrades (the segments "
                                 "on its bar in the Unit Overview). Max = all the way.")
             grid.addWidget(self.cap, 7, 0)
+        self.air = None
+        if air_option:
+            self.air = QCheckBox("Air unit (orange zones; off = land, red zones)")
+            self.air.setToolTip("Where it's placed on maps with land / air zones (Misty Village): "
+                                "air units in the orange zones, land units in the red ones.")
+            grid.addWidget(self.air, 8, 0, 1, 2)
         self.place_wave = self.upgrade_wave = None
         if wave_option:
             grid.addWidget(QLabel("From wave: place · upgrade", objectName="Muted"), 6, 1)
@@ -183,7 +189,7 @@ class UnitCard(QFrame):
 
     def _enable(self, on: bool) -> None:
         for widget in (self.placements, self.place_priority, self.no_upgrade, self.path, self.farm,
-                       self.place_wave):
+                       self.place_wave, self.air):
             if widget is not None:
                 widget.setEnabled(on)
         upgrades = on and not self.no_upgrade.isChecked()
@@ -229,6 +235,7 @@ class ModeSettings(QWidget):
         self.mode_key = mode_key
         self.ic = issubclass(config_class, InfinityConfig)
         self.farm = "farm_units" in getattr(config_class, "__dataclass_fields__", {})
+        self.air = "air_units" in getattr(config_class, "__dataclass_fields__", {})
         self.caps = "upgrade_caps" in getattr(config_class, "__dataclass_fields__", {})
         self.waves = "place_from_wave" in getattr(config_class, "__dataclass_fields__", {})
         layout = QVBoxLayout(self)
@@ -239,7 +246,7 @@ class ModeSettings(QWidget):
         grid.setSpacing(10)
         self.cards = {}
         for index, key in enumerate(VALID_KEYS):
-            card = UnitCard(key, path_option=self.ic, farm_option=self.farm, cap_option=self.caps,
+            card = UnitCard(key, path_option=self.ic, farm_option=self.farm, cap_option=self.caps, air_option=self.air,
                             wave_option=self.waves)
             grid.addWidget(card, index // 2, index % 2)
             self.cards[key] = card
@@ -573,6 +580,8 @@ class ModeSettings(QWidget):
         for key, values in cards_from_config(config).items():
             self.cards[key].set_values(values, key in path, key in farm, caps.get(key, 0),
                                        place_waves.get(key, 0), upgrade_waves.get(key, 0))
+            if self.cards[key].air is not None:
+                self.cards[key].air.setChecked(key in set(getattr(config, "air_units", [])))
         for name, box in self.switches.items():
             box.setChecked(bool(getattr(config, name)))
         for name, buttons in self.choices.items():
@@ -615,6 +624,9 @@ class ModeSettings(QWidget):
                                       if card.place_wave.value() > 0 and cards[k]["enabled"]}
             config.upgrade_from_wave = {k: card.upgrade_wave.value() for k, card in self.cards.items()
                                         if card.upgrade_wave.value() > 0 and cards[k]["enabled"]}
+        if self.air:
+            config.air_units = [k for k, card in self.cards.items()
+                                if card.air is not None and card.air.isChecked() and cards[k]["enabled"]]
         if self.farm:
             config.farm_units = [k for k, card in self.cards.items()
                                  if card.farm is not None and card.farm.isChecked() and cards[k]["enabled"]]

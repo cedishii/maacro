@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .config import MacroConfig
@@ -63,6 +63,9 @@ class MistyConfig(GeneralConfig):
     walk_sprint: bool = False            # a plain walk (the 5 s was measured without Shift)
     teleport_wait: float = 4.0
     day_only: bool = False               # True: always Day ("spam Day"); False: Night whenever open
+    # Units placed in the air zones (orange on the map drawings); the rest go in
+    # the land zones (red). Maps: maps/general/misty_village_day.json.
+    air_units: list = field(default_factory=list)
 
     @classmethod
     def load(cls, path: Path = MISTY_CONFIG_PATH) -> "MistyConfig":
@@ -394,6 +397,15 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
         if self._wait_for(lambda lines: find_word(lines, "join matchmaking", threshold=0.7), 5) is None:
             self.log.emit("Lobby: 'Join Matchmaking?' not seen after Select — waiting for the match.", "Warn")
         return True
+
+    # --- land / air zones -------------------------------------------------------
+    def _unit_zones(self, whole, key: str):
+        """On a map drawn per unit kind, air units use the "air" zones and the
+        others the "land" zones; other maps as usual."""
+        kind = "air" if str(key) in {str(k) for k in getattr(self.settings, "air_units", [])} else "land"
+        if kind in getattr(whole, "unit_zones", {}) or kind in getattr(whole, "unit_points", {}):
+            return whole.for_unit(kind)
+        return super()._unit_zones(whole, key)
 
     # Matchmaking and the captcha: the player's own code in macro.py, unchanged
     # (Any Stage would leave them to the player).
