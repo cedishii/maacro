@@ -42,6 +42,7 @@ NEXT_WORDS = ("next stage", "next level", "next act", "next room", "next floor")
 LOBBY_WORDS = ("return to lobby",)
 AFTER_MATCH = {"replay": REPLAY_WORDS, "next": NEXT_WORDS + REPLAY_WORDS}
 AFTER_MATCH_EVERY = 20      # s between presses (a second press could cancel a vote)
+YES_STEADY = 3             # px: "Yes" this still between two reads = the vote box has stopped
 SPOT_AFTER_SECONDS = 4.0    # button text not read for this long → press its usual spot
 REPLAY_DX = 1.19            # Replay: this × "Return to lobby"'s width right of its centre (measured)
 
@@ -106,6 +107,7 @@ class GeneralThread(GameAutoUpgrade, CardFirst, PlaceOnlyUnits, ScrollingUpgrade
         self._rezoomed = False
         self._after_tries = 0
         self._after_seen_at = None
+        self._yes_seen = None
 
     def _on_in_match(self, hwnd: int) -> None:
         """Zoom out at the start of every match (MacroThread does that), and
@@ -153,9 +155,29 @@ class GeneralThread(GameAutoUpgrade, CardFirst, PlaceOnlyUnits, ScrollingUpgrade
 
     def _on_vote_start(self, hwnd: int) -> None:
         if self.settings.auto_vote_start:
+            if not self._vote_box_settled():
+                self._say("Vote start — waiting for the vote box to stop moving", log=False)
+                return
             super()._on_vote_start(hwnd)
         else:
             self._wait("vote start (voting is off in General's settings)")
+
+    def _vote_box_settled(self) -> bool:
+        """The vote box slides in from the top: "Yes" read at y 178, 167, then
+        163 within a second (live, Infinite). Clicking the first read hit
+        below the button. Only click once two different reads agree."""
+        det = self.detector.latest
+        if det is None or getattr(self.match, "voted_start", False):
+            return True
+        yes = self._line(det, "yes", exact=True)
+        if yes is None:
+            return True                     # nothing to click yet: the usual step decides
+        count = getattr(self.detector, "latest_count", None)
+        last = getattr(self, "_yes_seen", None)
+        if last is not None and last[0] == count:
+            return False                    # same read as last time: wait for a new one
+        self._yes_seen = (count, yes.x, yes.y)
+        return last is not None and abs(last[1] - yes.x) <= YES_STEADY and abs(last[2] - yes.y) <= YES_STEADY
 
     def _on_card_pick(self, hwnd: int) -> None:
         if self.settings.auto_card_pick:
