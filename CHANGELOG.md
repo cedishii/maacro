@@ -3,6 +3,11 @@
 ## Unreleased
 
 **Fixed**
+- **Misty Village: the lobby read as a match no longer gets match keys.** Live, the lobby (and the
+  stage window, whose "for first clear" reads like the unit manager's First buttons) was read as a
+  match / the unit manager: MAACRO pressed O, tried placing, and pressed F, which in the lobby
+  opens the Store (the Exclusive Shop). With the lobby's buttons on screen it now does the lobby
+  step instead. The Night timer is read up to 3 times before picking Day.
 - **Misty Village: Find Match pressed even when the window is misread.** Live, "Join Matchmaking?"
   was up but read as "In match" (the stage window's "Level Info" under it) and nothing was pressed;
   the window's title now hands it to the player's matchmaking/captcha code whatever the reading.

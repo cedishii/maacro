@@ -39,7 +39,7 @@ from .close_x import close_button
 from .control import input as inp
 from .lobby_start import POPUP_REGION, WAIT_FOR_MATCH, LobbyStarter, find_word, parse_steps
 from .vision.ocr import OcrLine
-from .vision.screens import _norm, fuzzy_in
+from .vision.screens import _lobby_menu, _norm, fuzzy_in
 
 ROOT = Path(__file__).resolve().parents[1]
 MISTY_CONFIG_PATH = ROOT / "misty_config.json"
@@ -222,7 +222,16 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
         click the lobby). Waits for the match; after WAIT_FOR_MATCH s, Cancel
         and start over."""
         det = self.detector.latest
-        if det is None or not stage_window_up(det.lines):
+        if det is None:
+            return False
+        if not stage_window_up(det.lines):
+            if _lobby_menu(det.lines):
+                # The lobby's own buttons (Units, Store, Play…): not a match,
+                # whatever the reading (seen live: O pressed and units "placed"
+                # on the lobby; F there opens the Store). Do the lobby's step.
+                self._say("Lobby (read as a match) — doing the lobby step", log=False)
+                self._on_lobby(hwnd)
+                return True
             return False
         now = time.monotonic()
         since = getattr(self, "_lobby_started_at", None) or getattr(self, "_stage_window_since", None)
@@ -325,8 +334,15 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
         if header is None:
             self._lobby_failed("the Misty Village Stages window didn't pop up (adjust the walk?)")
             return False
-        lines = self._read()
-        timer = read_night_timer(lines)
+        lines, timer = [], None
+        for _ in range(3):                  # the timer is missed now and then: read again
+            lines = self._read()
+            timer = read_night_timer(lines)
+            if timer is not None:
+                break
+            self._sleep(0.4)
+        if timer is None:
+            self.log.emit("Misty Village: the Night timer wasn't read.", "Warn")
         self._note_timer(timer)
         day_only = getattr(self.settings, "day_only", False)
         want_night = not day_only and (timer[0] == "open" if timer else self._night_open_now())
