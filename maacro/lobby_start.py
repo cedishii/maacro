@@ -157,6 +157,10 @@ def tile_spot(title: OcrLine, tile: str) -> tuple[float, float]:
     return title.x + title.w / 2 + dx * title.w, title.y + title.h / 2 + dy * title.w
 
 
+CHOOSER_DX = {"summer event": -0.335, "misty village": 0.0, "regular stages": 0.33}
+CHOOSER_DY = 0.22
+
+
 def chooser_tile(lines: list[OcrLine], tile: str, header: OcrLine):
     """The tile in the "Where do you want to Play?" window. Its names are on
     two lines ("Misty" / "Village"): the first word below the header is enough."""
@@ -165,7 +169,15 @@ def chooser_tile(lines: list[OcrLine], tile: str, header: OcrLine):
     if found is not None:
         return found
     first = tile.split()[0]
-    return find_word(below, first, exact=True) or find_word(below, first, threshold=0.8)
+    found = find_word(below, first, exact=True) or find_word(below, first, threshold=0.8)
+    if found is not None or tile not in CHOOSER_DX:
+        return found
+    # The labels sit on pictures and often aren't read: the tile's place, from
+    # the header (measured on the player's screenshot: header 520 px wide,
+    # tiles 0.22 header-widths below it, Summer / Misty / Regular side by side).
+    x = header.x + header.w / 2 + CHOOSER_DX[tile] * header.w
+    y = header.y + header.h / 2 + CHOOSER_DY * header.w
+    return OcrLine(tile.title(), int(x - 10), int(y - 10), 20, 20)
 
 
 class LobbyStarter:

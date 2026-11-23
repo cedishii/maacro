@@ -39,6 +39,11 @@
   with no card text read at all.
 
 **New**
+- **Misty Village: Find Match is clicked on the button.** Its label is never read there, so the
+  matchmaking code got the "Join Matchmaking?" title and clicked it (nothing happened, every 4 s).
+  The button's place now comes from the title (`find_match.py`; the code in macro.py is unchanged).
+  Live: Find Match → captcha in 1 s → number read and typed → Submit → match found. Misty Village
+  only for now. The Play window's tiles are also clicked by place when their labels aren't read.
 - **Lobby Play button (update 21.5).** Play opens "Where do you want to Play?" (Summer Event / Misty
   Village / Regular Stages). Misty Village and Story / Infinite (Regular Stages) now go that way;
   the Areas window is the fallback when the Play window doesn't open, and stays the way for

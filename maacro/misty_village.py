@@ -32,6 +32,7 @@ from pathlib import Path
 
 from .config import MacroConfig
 from .general.config import GeneralConfig
+from .find_match import FindMatchSpot
 from .general.controller import LOBBY_WORDS, REPLAY_WORDS, GeneralThread
 from .macro import MacroThread
 from .close_x import close_button
@@ -43,7 +44,7 @@ from .vision.screens import _norm
 ROOT = Path(__file__).resolve().parents[1]
 MISTY_CONFIG_PATH = ROOT / "misty_config.json"
 WAVES = {"night": 20, "day": 15}
-FIND_MATCH_EVERY = 12.0      # s between Find Match tries (the captcha is slow to show here)
+FIND_MATCH_EVERY = 6.0       # s between Find Match tries (a missed click isn't repeated every 4 s)
 NIGHT_MIN_LEFT = 6 * 60      # s of night needed to start (or replay) a Night run
 # Digits are often misread as letters ("51:oq" = 51:09): those letters count as digits.
 SELECT_READS = ("select", "belect", "seiect", "selcct", "5elect", "sclect")
@@ -122,7 +123,7 @@ def stage_of(map_name: str | None) -> str | None:
     return None
 
 
-class MistyVillageThread(LobbyStarter, GeneralThread):
+class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
     AREA_TILE, LOBBY_KIND = "misty village", "misty"
     PLAY_TILE = "misty village"
     INTRO = ("Misty Village — goes there from the lobby (Areas → Misty Village → walk right), plays "
@@ -308,9 +309,8 @@ class MistyVillageThread(LobbyStarter, GeneralThread):
     # Matchmaking and the captcha: the player's own code in macro.py, unchanged
     # (Any Stage would leave them to the player).
     def _on_join_matchmaking(self, hwnd: int) -> None:
-        # Here the captcha takes a few seconds to show after Find Match; the
-        # player's code would click Find Match again every 4 s meanwhile (seen
-        # live: ~15 clicks). Give it time between tries.
+        # A try that didn't bring the captcha up isn't repeated every 4 s
+        # (seen live: ~15 clicks on the title before FindMatchSpot).
         if not self._cooldown("misty_find_match", FIND_MATCH_EVERY):
             self._say("Matchmaking — waiting for the captcha", log=False)
             return
