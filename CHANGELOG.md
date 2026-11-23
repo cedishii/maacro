@@ -3,6 +3,10 @@
 ## Unreleased
 
 **Fixed**
+- **Misty Village: the Village Shop at the end of a match is closed** (seen live, it blocked the
+  results): X → "LEAVE THE SHOP?" → **Leave** (never Stay), then the usual Return to lobby / Replay.
+  With the Unit Overview over it, the manager is closed first (F; no X on a unit card is ever
+  clicked). If its X isn't found by colour, its usual place right of the title is used.
 - **Day zones on a Night stage.** The loading screen shows "Misty Village" and "Night Stage" on
   separate lines, and the Day map matched the first; a map named for Day / Night now needs that
   word in the same text.

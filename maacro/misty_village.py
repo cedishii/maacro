@@ -36,6 +36,7 @@ from .find_match import FindMatchSpot, matchmaking_title
 from .general.controller import LOBBY_WORDS, REPLAY_WORDS, GeneralThread
 from .macro import MacroThread
 from .close_x import close_button
+from .upgrades import overview_title
 from .control import input as inp
 from .lobby_start import POPUP_REGION, WAIT_FOR_MATCH, LobbyStarter, find_word, parse_steps
 from .vision.ocr import OcrLine
@@ -273,19 +274,36 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
         """The village shop pops up now and then: close it with its X. Only
         the X next to the shop's own title is clicked, and never with the unit
         manager open (its cards have red X buttons that sell the unit)."""
-        if det is None or det.screen == "unit_manager":
+        if det is None:
             return False
+        # After the X: "LEAVE THE SHOP?" Leave / Stay → Leave (then the usual
+        # Return to lobby / Replay screen comes up).
+        if any("leavetheshop" in _norm(l.text) for l in det.lines):
+            leave = next((l for l in det.lines if _norm(l.text) == "leave"), None)
+            if leave is not None and self._cooldown("village_shop_leave", 2.0):
+                self.log.emit("Leaving the village shop.", "Info")
+                inp.focus(hwnd)
+                inp.click(hwnd, leave.x + leave.w / 2, leave.y + leave.h / 2)
+                self._park_mouse(hwnd)
+            return True
         title = shop_title(det.lines, self._frame_wh()[1])
         if title is None or not self._cooldown("village_shop", 2.0):
             return False
+        manager = det.screen == "unit_manager" or overview_title(det.lines) is not None
         _, frame = self.capture.latest_frame()
-        spot = close_button(frame, title)
+        spot = None if manager else close_button(frame, title)
+        if manager:
+            # Seen live: the Village Shop at the end of a match, the Unit
+            # Overview over its X. Close the manager first (F; in a match).
+            self.log.emit("The village shop is behind the unit manager — closing the manager first.", "Info")
+            inp.focus(hwnd)
+            inp.press(hwnd, "f")
+            return True
         if spot is None:
+            # Its usual place: right of the "Village Shop!" title (measured live).
+            spot = (title.x + 1.085 * title.w, title.y + title.h / 2 + 0.03 * title.w)
             if self._cooldown("village_shop_note", 120):
-                self.log.emit("The village shop is open but its X wasn't found — please close it "
-                              "(a picture is saved in logs/lobby/).", "Warn")
-                self._save_failure("village shop x not found")
-            return False
+                self._save_failure("village shop x by place")
         shot = self._save_failure("village shop closed")
         self.log.emit("The village shop popped up — closing it"
                       + (f" (picture: logs/lobby/{shot.name})." if shot is not None else "."), "Info")
