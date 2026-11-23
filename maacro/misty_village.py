@@ -250,6 +250,16 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
             self._lobby_failed("no match started from the stage window")    # presses Cancel
         return True
 
+    # --- Replay when its text isn't read --------------------------------------------
+    def _replay_spot(self, det):
+        """Replay (white on yellow, often not read) sits right of "Return to
+        lobby", level with it: 1.19 of its width further right (measured on the
+        player's screenshot). Live, the spot from "Waiting for Players" missed."""
+        back = next((l for l in det.lines if "returntolobby" in _norm(l.text)), None)
+        if back is not None and back.w > 40:
+            return back.center_x + 1.19 * back.w, back.y + back.h / 2
+        return super()._replay_spot(det)
+
     # --- the unit manager over the end screens -----------------------------------
     def _close_covering_manager(self, hwnd: int, det) -> bool:
         """At most MANAGER_CLOSE_TRIES F presses per end screen, then go on with
