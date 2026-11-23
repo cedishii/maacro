@@ -723,7 +723,10 @@ class ConfigsPage(QWidget):
         tabs.addTab(ModeSettings(MistyConfig, {
             **stage_switches,
             "day_only": "Day stages only (off = Night whenever it's open, Day otherwise)",
-        }, {}, mode_key="misty_village", lobby={
+        }, {"misty_after": ("After each match", [
+            ("lobby", "Return to lobby, then back in (each match picks Night / Day again)"),
+            ("replay", "Replay (back to the lobby only to switch Night ↔ Day)"),
+        ])}, mode_key="misty_village", lobby={
             "tile": "Misty Village",
             "steps": ("Play → Misty Village → walk right into the stages window (the walk "
                       "below; S 0.5 s more if it didn't pop up) → Night or Day Stages → Select → Find "

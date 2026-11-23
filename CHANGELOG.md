@@ -65,6 +65,9 @@
   with no card text read at all.
 
 **New**
+- **Misty Village: back to the lobby after every match** (default), so each match goes through Find
+  Match (matchmaking = teammates) and picks Night / Day afresh. "Replay" is still a choice on its
+  Configs tab ("After each match").
 - **The game's auto upgrade (T).** "Use the game's auto upgrade" on Configs (Summer and every Any
   Stage-based mode): in the unit manager MAACRO presses T until "Auto Upgs Active" shows (T toggles,
   so never while it's on), then closes it and leaves upgrading to the game for the match. If it

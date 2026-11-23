@@ -65,6 +65,9 @@ class MistyConfig(GeneralConfig):
     walk_sprint: bool = False            # a plain walk (the 5 s was measured without Shift)
     teleport_wait: float = 4.0
     day_only: bool = False               # True: always Day ("spam Day"); False: Night whenever open
+    # After each match: "lobby" = Return to lobby and come back in (the player's
+    # choice: each match picks Night / Day afresh), "replay" = Replay.
+    misty_after: str = "lobby"
     # Units placed in the air zones (orange on the map drawings); the rest go in
     # the land zones (red). Maps: maps/general/misty_village_day.json.
     air_units: list = field(default_factory=list)
@@ -156,10 +159,16 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
         self._stage = None             # "night" / "day": what was picked last
         self._night_opens_at = 0.0     # wall clock (time.time()); 0 = not known
         self._night_closes_at = 0.0
+        back = getattr(self.settings, "misty_after", "lobby") != "replay"
         if getattr(self.settings, "day_only", False):
             self.log.emit("Misty Village: Day stages only.", "Info")
             self.INTRO = ("Misty Village — goes there from the lobby (Play → Misty Village → walk right) "
-                          "and plays the Day stage every time (15 waves), with Replay.")
+                          "and plays the Day stage every time (15 waves), then "
+                          + ("Return to lobby and back in." if back else "Replay."))
+        elif back:
+            self.INTRO = ("Misty Village — goes there from the lobby (Play → Misty Village → walk right), "
+                          "plays Night whenever it's open (20 waves), otherwise Day (15 waves), then "
+                          "Return to lobby and back in.")
         super().run()
 
     # --- which stage ---------------------------------------------------------
@@ -192,6 +201,8 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
         return stage_of(getattr(self.detector.tracker, "map_name", None)) or self._stage
 
     def _after_words(self):
+        if getattr(self.settings, "misty_after", "lobby") != "replay":
+            return LOBBY_WORDS                  # back to the lobby after every match
         words = self._misty_after()
         # Replay first: "Return to lobby" is only the fallback once Replay hasn't
         # been read for a few tries (live: the first read had only "Return to
