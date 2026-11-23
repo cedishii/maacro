@@ -40,6 +40,7 @@ AREAS_SPOT = (0.966, 0.856)
 AREAS_REGION = (0.88, 0.62, 1.0, 0.96)             # x0, y0, x1, y1: the right-hand buttons
 POPUP_REGION = (0.15, 0.05, 0.85, 0.95)            # the middle: popups and the world / stage windows
 PLAY_SPOT = (0.079, 0.474)                         # the lobby's Play button (gamepad), left column
+PARTY_WAIT = 10.0       # s in the lobby before starting, so party members load in
 PLAY_REGION = (0.0, 0.25, 0.14, 0.75)              # the lobby buttons on the left (Units, Store, Play…)
 # The area tiles, from the "Areas (Click to Teleport)" title: (dx, dy) × the title's width.
 TILE_FROM_TITLE = {"challenges": (-0.15, 0.93), "play area": (0.53, 0.56)}
@@ -231,11 +232,35 @@ class LobbyStarter:
         """Starting from the lobby is on (and set up enough to try)."""
         return bool(getattr(self.settings, "lobby_start", False))
 
+    def _party_wait_left(self, now: float) -> float:
+        """Seconds still to wait in the lobby so party members load in first
+        (party_wait: "party" = when the party panel "@Name's Party" shows — it
+        isn't there when you're alone —, "always", "off"). Counted from when
+        MAACRO got to the lobby."""
+        from .party import party_leader
+        mode = getattr(self.settings, "party_wait", "party")
+        if mode == "off":
+            return 0.0
+        arrived = getattr(self, "_lobby_arrived_at", None)
+        if arrived is None:
+            self._lobby_arrived_at = arrived = now
+        if not getattr(self, "_party_seen", False):
+            det = self.detector.latest
+            self._party_seen = mode == "always" or (det is not None and party_leader(det.lines) is not None)
+            if not self._party_seen:
+                return 0.0
+        return max(0.0, arrived + PARTY_WAIT - now)
+
     def _on_lobby(self, hwnd: int) -> None:
         if not self._lobby_ready():
             super()._on_lobby(hwnd)
             return
         now = time.monotonic()
+        if getattr(self, "_lobby_started_at", None) is None:
+            left = self._party_wait_left(now)
+            if left > 0:
+                self._say(f"Lobby: waiting {int(left + 0.99)} s for the party to load in", log=False)
+                return
         started = getattr(self, "_lobby_started_at", None)
         if started is not None and now - started < WAIT_FOR_MATCH:
             self._say("Lobby: waiting for the match to start", log=False)
@@ -254,6 +279,7 @@ class LobbyStarter:
 
     def _new_match(self) -> None:
         super()._new_match()
+        self._lobby_arrived_at, self._party_seen = None, False     # the next lobby visit waits afresh
         screen = self.detector.tracker.screen
         if screen in ("loading", "vote_start") and getattr(self, "_lobby_started_at", None) is not None:
             self._lobby_started_at = None

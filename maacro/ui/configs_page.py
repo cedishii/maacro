@@ -726,6 +726,10 @@ class ConfigsPage(QWidget):
         }, {"misty_after": ("After each match", [
             ("lobby", "Return to lobby, then back in (each match picks Night / Day again)"),
             ("replay", "Replay (back to the lobby only to switch Night ↔ Day)"),
+        ]), "party_wait": ("Before pressing Play in the lobby", [
+            ("party", "Wait 10 s when you're in a party (so your party members load in first)"),
+            ("always", "Always wait 10 s"),
+            ("off", "Don't wait"),
         ])}, mode_key="misty_village", lobby={
             "tile": "Misty Village",
             "steps": ("Play → Misty Village → walk right into the stages window (the walk "

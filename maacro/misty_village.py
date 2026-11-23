@@ -68,6 +68,9 @@ class MistyConfig(GeneralConfig):
     # After each match: "lobby" = Return to lobby and come back in (the player's
     # choice: each match picks Night / Day afresh), "replay" = Replay.
     misty_after: str = "lobby"
+    # Before starting from the lobby: "party" = wait 10 s when the party panel
+    # shows (members load in), "always", "off".
+    party_wait: str = "party"
     # Units placed in the air zones (orange on the map drawings); the rest go in
     # the land zones (red). Maps: maps/general/misty_village_day.json.
     air_units: list = field(default_factory=list)
@@ -131,6 +134,24 @@ STAGE_WINDOW_WORDS = ("unitlevel", "friendsonly", "clearrewards")
 
 def stage_window_up(lines: list[OcrLine]) -> bool:
     return sum(any(w in _norm(l.text) for l in lines) for w in STAGE_WINDOW_WORDS) >= 2
+
+
+END_WORDS = ("victory", "defeat")
+END_F_TRIES = 2         # F presses a match to uncover the end screen behind the unit manager
+END_F_EVERY = 3.0       # s between them (F toggles: give the first one time to show)
+
+
+def match_over_behind(lines: list[OcrLine], height: int) -> bool:
+    """The match is over even though the unit manager is still open over it:
+    the village shop, VICTORY / DEFEAT, or the results' "Next" with "+N XP".
+    Seen live: the shop covered VICTORY, the screen read "Unit manager", and
+    MAACRO kept upgrading for ~20 s before the end steps."""
+    if shop_title(lines, height) is not None:
+        return True
+    texts = [_norm(l.text) for l in lines]
+    if any(w in t for t in texts for w in END_WORDS):
+        return True
+    return "next" in texts and any(t.endswith("xp") and any(c.isdigit() for c in t) for t in texts)
 
 
 def stage_of(map_name: str | None) -> str | None:
@@ -237,7 +258,24 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
     def _on_unit_manager(self, hwnd: int) -> None:
         if self._still_in_lobby(hwnd):
             return
+        det = self.detector.latest
+        if det is not None and match_over_behind(det.lines, self._frame_wh()[1]):
+            self._uncover_end(hwnd)
+            return
         super()._on_unit_manager(hwnd)
+
+    def _uncover_end(self, hwnd: int) -> bool:
+        """Close the unit manager (F) so the end screen / village shop under it
+        can be handled now. At most END_F_TRIES a match, END_F_EVERY apart."""
+        tries = getattr(self, "_end_f_tries", 0)
+        if tries >= END_F_TRIES:
+            return False
+        if self._cooldown("end_behind_manager", END_F_EVERY):
+            self._end_f_tries = tries + 1
+            self.log.emit("Match over behind the unit manager — closing it.", "Info")
+            self._say("Match over — closing the unit manager")
+            inp.press(hwnd, "f")
+        return True
 
     def _still_in_lobby(self, hwnd: int) -> bool:
         """The stage window is on screen: no placing or upgrading (it would
@@ -285,6 +323,9 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
         pressed, and the fallback went back to the lobby."""
         if getattr(self, "_manager_close_tries", 0) >= MANAGER_CLOSE_TRIES:
             return False
+        pressed_at = self._last_done.get("end_behind_manager")
+        if pressed_at is not None and time.monotonic() - pressed_at < END_F_EVERY:
+            return False            # F just pressed for the end screen: a second one would reopen it
         pressed = super()._close_covering_manager(hwnd, det)
         if pressed:
             self._manager_close_tries = getattr(self, "_manager_close_tries", 0) + 1
@@ -293,6 +334,7 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
     def _new_match(self) -> None:
         super()._new_match()
         self._manager_close_tries = 0
+        self._end_f_tries = 0
 
     # --- the village shop ----------------------------------------------------
     def _close_chat(self, hwnd: int, det) -> bool:
@@ -340,9 +382,11 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
         _, frame = self.capture.latest_frame()
         spot = None if manager else close_button(frame, title)
         if manager:
-            # The Unit Overview is over the shop's X: the end-screen step closes
-            # the manager (F); pressing F here too undid it (F toggles; seen live).
-            return False
+            # The Unit Overview is over the shop's X (and its cards have sell X
+            # buttons): close it first, once (F toggles: the end-screen step
+            # pressing F too undid it, seen live — so this returns True and the
+            # end step waits for the next look).
+            return self._uncover_end(hwnd)
         if spot is None:
             # Its usual place: right of the "Village Shop!" title (measured live).
             spot = (title.x + 1.085 * title.w, title.y + title.h / 2 + 0.03 * title.w)
