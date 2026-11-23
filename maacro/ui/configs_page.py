@@ -746,7 +746,7 @@ class ConfigsPage(QWidget):
         }, {"after_match": ("After the match", [
             ("none", "Leave it to me — wait on the results screen"),
             ("replay", "Replay the same stage (farm it)"),
-            ("next", "Next Stage — go on to the next act/stage (Replay when there's none)"),
+            ("next", "Next Stage / Next Floor — go on to the next act, stage or tower floor (Retry / Replay when there's none)"),
         ])}, mode_key="general"), "Any Stage")
         tabs.addTab(ModeSettings(SkyPortalConfig, {
             "place_units": "Place units",

@@ -36,7 +36,7 @@ GAME_SCREENS = ("vote_start", "in_match", "unit_manager", "card_pick")
 
 # Buttons after a match, by the "After the match" setting (first found wins).
 REPLAY_WORDS = ("replay", "retry", "play again")
-NEXT_WORDS = ("next stage", "next level", "next act", "next room")
+NEXT_WORDS = ("next stage", "next level", "next act", "next room", "next floor")   # floor: Misty Tower
 LOBBY_WORDS = ("return to lobby",)
 AFTER_MATCH = {"replay": REPLAY_WORDS, "next": NEXT_WORDS + REPLAY_WORDS}
 AFTER_MATCH_EVERY = 20      # s between presses (a second press could cancel a vote)
