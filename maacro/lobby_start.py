@@ -39,6 +39,7 @@ from .vision.screens import _norm, fuzzy_in
 AREAS_SPOT = (0.966, 0.856)
 AREAS_REGION = (0.88, 0.62, 1.0, 0.96)             # x0, y0, x1, y1: the right-hand buttons
 POPUP_REGION = (0.15, 0.05, 0.85, 0.95)            # the middle: popups and the world / stage windows
+PLAY_SPOT = (0.079, 0.474)                         # the lobby's Play button (gamepad), left column
 PLAY_REGION = (0.0, 0.25, 0.14, 0.75)              # the lobby buttons on the left (Units, Store, Play…)
 # The area tiles, from the "Areas (Click to Teleport)" title: (dx, dy) × the title's width.
 TILE_FROM_TITLE = {"challenges": (-0.15, 0.93), "play area": (0.53, 0.56)}
@@ -296,8 +297,11 @@ class LobbyStarter:
     def _start_from_lobby(self, hwnd: int) -> None:
         # 1. Play → "Where do you want to Play?" → this mode's tile (update
         #    21.5); the Areas window when there's no tile for it or it fails.
-        if self.PLAY_TILE and self._play_chooser(hwnd):
-            self._after_area(hwnd)
+        if self.PLAY_TILE:
+            if self._play_chooser(hwnd):
+                self._after_area(hwnd)
+            else:
+                self._lobby_failed("the Play window didn't work")   # Play again later, never Areas
             return
         width, height = self._frame_wh()
         title = find_word(self._read(), "areas click to teleport", threshold=0.7)
@@ -340,17 +344,24 @@ class LobbyStarter:
         False (nothing pressed in the window) when it doesn't open."""
         header = find_word(self._read(), "where do you want to play", threshold=0.7)
         if header is None:
-            button = find_word(self._read(PLAY_REGION), "play", exact=True)
-            if button is None:
-                return False
-            self._click(hwnd, button, "Play")
+            lines = self._read(PLAY_REGION)
+            button = find_word(lines, "play", exact=True) or next(
+                (l for l in lines if len(_norm(l.text)) <= 5 and fuzzy_in("play", l.text, 0.7)), None)
+            if button is not None:
+                self._click(hwnd, button, "Play")
+            else:
+                width, height = self._frame_wh()
+                self.log.emit("Lobby: clicking Play (its usual place — the text wasn't read)", "Info")
+                inp.focus(hwnd)
+                inp.click(hwnd, PLAY_SPOT[0] * width, PLAY_SPOT[1] * height)
+                self._park_mouse(hwnd)
             header = self._wait_for(lambda lines: find_word(lines, "where do you want to play", threshold=0.7), 4)
         if header is None:
-            self.log.emit("Lobby: the 'Where do you want to Play?' window didn't open — using Areas.", "Info")
+            self.log.emit("Lobby: the 'Where do you want to Play?' window didn't open.", "Warn")
             return False
         tile = self._wait_for(lambda lines: chooser_tile(lines, self.PLAY_TILE, header), 3)
         if tile is None:
-            self.log.emit(f"Lobby: '{self.PLAY_TILE.title()}' not read in the Play window — using Areas.", "Warn")
+            self.log.emit(f"Lobby: '{self.PLAY_TILE.title()}' not found in the Play window.", "Warn")
             close = close_button(self.capture.latest_frame()[1], header)
             if close is not None:
                 inp.click(hwnd, *close)

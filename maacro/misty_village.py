@@ -2,8 +2,8 @@
 
 The way in, from the player's screenshots:
 
-  1. Lobby → Areas → the "Areas (Click to Teleport)" window scrolls: Misty
-     Village is near the bottom (under Guilds) → teleport.
+  1. Lobby → Play → "Where do you want to Play?" → Misty Village (since the
+     Play window; never the Areas window) → teleport.
   2. Walk right (D, 5 s) until the "Misty Village Stages" window pops up; if
      it doesn't, a little down (S, 0.5 s).
   3. Two tiles: "Day Stages" (open day and night) and "Night Stages", whose
@@ -39,11 +39,12 @@ from .close_x import close_button
 from .control import input as inp
 from .lobby_start import POPUP_REGION, LobbyStarter, find_word, parse_steps
 from .vision.ocr import OcrLine
-from .vision.screens import _norm
+from .vision.screens import _norm, fuzzy_in
 
 ROOT = Path(__file__).resolve().parents[1]
 MISTY_CONFIG_PATH = ROOT / "misty_config.json"
 WAVES = {"night": 20, "day": 15}
+REPLAY_TRIES = 4             # after-match tries looking for Replay before Return to lobby will do
 FIND_MATCH_EVERY = 6.0       # s between Find Match tries (a missed click isn't repeated every 4 s)
 NIGHT_MIN_LEFT = 6 * 60      # s of night needed to start (or replay) a Night run
 # Digits are often misread as letters ("51:oq" = 51:09): those letters count as digits.
@@ -102,13 +103,11 @@ def stages_window(lines: list[OcrLine]) -> OcrLine | None:
 
 
 def shop_title(lines: list[OcrLine], height: int) -> OcrLine | None:
-    """The village shop's title ("Village Shop", or a big "... Shop" heading
-    in the upper half). The lobby's "Store" button is not it."""
+    """The village shop's title: "Village Shop" (closely read). Nothing else
+    with "shop" in it counts (a false close was seen at an end screen)."""
     for line in lines:
         text = _norm(line.text)
-        if "villageshop" in text:
-            return line
-        if text.endswith("shop") and len(text) <= 20 and line.y < 0.5 * height and line.h >= 0.025 * height:
+        if "villageshop" in text or (len(text) <= 16 and fuzzy_in("village shop", line.text, 0.85)):
             return line
     return None
 
@@ -126,7 +125,8 @@ def stage_of(map_name: str | None) -> str | None:
 class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
     AREA_TILE, LOBBY_KIND = "misty village", "misty"
     PLAY_TILE = "misty village"
-    INTRO = ("Misty Village — goes there from the lobby (Areas → Misty Village → walk right), plays "
+    AREAS_FALLBACK = False          # Play only: the Areas window is never opened
+    INTRO = ("Misty Village — goes there from the lobby (Play → Misty Village → walk right), plays "
              "Night stages whenever they're open (20 waves), otherwise Day (15 waves), and Replays; "
              "back to the lobby to switch when night opens or ends.")
     # Also asked before the run starts (the main page's rejoin check): defaults here.
@@ -164,6 +164,15 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
         return stage_of(getattr(self.detector.tracker, "map_name", None)) or self._stage
 
     def _after_words(self):
+        words = self._misty_after()
+        # Replay first: "Return to lobby" is only the fallback once Replay hasn't
+        # been read for a few tries (live: the first read had only "Return to
+        # lobby", and it went back to the lobby instead of replaying).
+        if words == REPLAY_WORDS + LOBBY_WORDS and getattr(self, "_after_tries", 0) < REPLAY_TRIES:
+            return REPLAY_WORDS
+        return words
+
+    def _misty_after(self):
         if getattr(self.settings, "day_only", False):
             return REPLAY_WORDS + LOBBY_WORDS
         stage = self._current_stage()
@@ -203,7 +212,9 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
                               "(a picture is saved in logs/lobby/).", "Warn")
                 self._save_failure("village shop x not found")
             return False
-        self.log.emit("The village shop popped up — closing it.", "Info")
+        shot = self._save_failure("village shop closed")
+        self.log.emit("The village shop popped up — closing it"
+                      + (f" (picture: logs/lobby/{shot.name})." if shot is not None else "."), "Info")
         inp.focus(hwnd)
         inp.click(hwnd, *spot)
         self._park_mouse(hwnd)

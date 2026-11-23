@@ -39,6 +39,12 @@
   with no card text read at all.
 
 **New**
+- **Play only, never Areas** (Misty Village, Story, Infinite): when the Play window doesn't open or
+  the tile isn't found, it tries Play again later instead of opening Areas (Challenge still uses
+  Areas → Challenges). The Play button is also found by a close read or its usual place.
+- **Misty Village: Replay first.** "Return to lobby" is only taken after 4 tries without Replay read
+  (live, the first read had only "Return to lobby"), unless it's switching Day ↔ Night. The shop
+  closer only reacts to "Village Shop" now and saves a picture each time it closes one.
 - **Misty Village: Find Match is clicked on the button.** Its label is never read there, so the
   matchmaking code got the "Join Matchmaking?" title and clicked it (nothing happened, every 4 s).
   The button's place now comes from the title (`find_match.py`; the code in macro.py is unchanged).

@@ -27,7 +27,7 @@ DESCRIPTIONS = {
     "challenge": ("Start a challenge yourself. MAACRO plays it, then presses Replay if the game "
                   "offers one, otherwise Return to lobby. In the lobby, your lobby Actions (Actions "
                   "page, Challenge) can walk to the next challenge; otherwise it waits for you."),
-    "misty_village": ("Goes to Misty Village by itself (Areas → Misty Village → walk right → stages), "
+    "misty_village": ("Goes to Misty Village by itself (Play → Misty Village → walk right → stages), "
                       "plays the Night stage whenever it's open (20 waves), otherwise Day (15 waves), "
                       "and Replays; back to the lobby to switch when night opens or ends. Or tick "
                       "'Day stages only' on its Configs tab."),

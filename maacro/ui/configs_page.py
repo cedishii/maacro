@@ -705,7 +705,7 @@ class ConfigsPage(QWidget):
             "day_only": "Day stages only (off = Night whenever it's open, Day otherwise)",
         }, {}, mode_key="misty_village", lobby={
             "tile": "Misty Village",
-            "steps": ("Areas → scroll to Misty Village → walk right into the stages window (the walk "
+            "steps": ("Play → Misty Village → walk right into the stages window (the walk "
                       "below; S 0.5 s more if it didn't pop up) → Night or Day Stages → Select → Find "
                       "Match (your captcha code) → play."),
         }), "Misty Village")
