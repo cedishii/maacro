@@ -342,7 +342,17 @@ class LobbyStarter:
     def _play_chooser(self, hwnd: int) -> bool:
         """Lobby Play button → "Where do you want to Play?" → PLAY_TILE.
         False (nothing pressed in the window) when it doesn't open."""
-        header = find_word(self._read(), "where do you want to play", threshold=0.7)
+        lines = self._read()
+        header = find_word(lines, "where do you want to play", threshold=0.7)
+        areas = find_word(lines, "areas click to teleport", threshold=0.7)
+        if header is None and areas is not None:          # a stray Areas window: close it first
+            close = close_button(self.capture.latest_frame()[1], areas)
+            if close is not None:
+                self.log.emit("Lobby: closing the Areas window (Play is used now).", "Info")
+                inp.focus(hwnd)
+                inp.click(hwnd, *close)
+                self._park_mouse(hwnd)
+                self._sleep(0.6)
         if header is None:
             lines = self._read(PLAY_REGION)
             button = find_word(lines, "play", exact=True) or next(
