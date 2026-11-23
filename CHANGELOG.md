@@ -39,6 +39,9 @@
   with no card text read at all.
 
 **New**
+- **Misty Village: the village shop is closed when it pops up**, with the red X next to its title
+  (found by colour, `close_x.py`). Never while the unit manager is open, and never an X the size
+  of the unit cards' ones (those sell the unit).
 - **Misty Village mode** (update 21.5). From the lobby: Areas → scrolls to Misty Village → walks right
   (D 5 s, then S 0.5 s if the stages window didn't pop up) → **Night** stage whenever it's open
   ("Dawn breaks in …"), otherwise **Day** ("Night falls in …"; misread digits like "51:oq" are

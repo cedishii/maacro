@@ -34,6 +34,8 @@ from .config import MacroConfig
 from .general.config import GeneralConfig
 from .general.controller import LOBBY_WORDS, REPLAY_WORDS, GeneralThread
 from .macro import MacroThread
+from .close_x import close_button
+from .control import input as inp
 from .lobby_start import POPUP_REGION, LobbyStarter, find_word, parse_steps
 from .vision.ocr import OcrLine
 from .vision.screens import _norm
@@ -96,6 +98,18 @@ def stages_window(lines: list[OcrLine]) -> OcrLine | None:
     return (find_word(lines, "misty village stages", threshold=0.7)
             or find_word(lines, "day stages", threshold=0.75)
             or find_word(lines, "night stages", threshold=0.75))
+
+
+def shop_title(lines: list[OcrLine], height: int) -> OcrLine | None:
+    """The village shop's title ("Village Shop", or a big "... Shop" heading
+    in the upper half). The lobby's "Store" button is not it."""
+    for line in lines:
+        text = _norm(line.text)
+        if "villageshop" in text:
+            return line
+        if text.endswith("shop") and len(text) <= 20 and line.y < 0.5 * height and line.h >= 0.025 * height:
+            return line
+    return None
 
 
 def stage_of(map_name: str | None) -> str | None:
@@ -161,6 +175,37 @@ class MistyVillageThread(LobbyStarter, GeneralThread):
                 self.log.emit("Misty Village: Night is ending — back to the lobby to play Day.", "Info")
             return LOBBY_WORDS
         return REPLAY_WORDS + LOBBY_WORDS
+
+    # --- the village shop ----------------------------------------------------
+    def _close_chat(self, hwnd: int, det) -> bool:
+        """Every loop (before the screen's own step): close the village shop
+        if it popped up, then the usual chat check."""
+        if self._close_village_shop(hwnd, det):
+            return True
+        return super()._close_chat(hwnd, det)
+
+    def _close_village_shop(self, hwnd: int, det) -> bool:
+        """The village shop pops up now and then: close it with its X. Only
+        the X next to the shop's own title is clicked, and never with the unit
+        manager open (its cards have red X buttons that sell the unit)."""
+        if det is None or det.screen == "unit_manager":
+            return False
+        title = shop_title(det.lines, self._frame_wh()[1])
+        if title is None or not self._cooldown("village_shop", 2.0):
+            return False
+        _, frame = self.capture.latest_frame()
+        spot = close_button(frame, title)
+        if spot is None:
+            if self._cooldown("village_shop_note", 120):
+                self.log.emit("The village shop is open but its X wasn't found — please close it "
+                              "(a picture is saved in logs/lobby/).", "Warn")
+                self._save_failure("village shop x not found")
+            return False
+        self.log.emit("The village shop popped up — closing it.", "Info")
+        inp.focus(hwnd)
+        inp.click(hwnd, *spot)
+        self._park_mouse(hwnd)
+        return True
 
     # --- the lobby -----------------------------------------------------------
     def _start_from_lobby(self, hwnd: int) -> None:
