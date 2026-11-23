@@ -9,15 +9,6 @@
     "4",
     "4",
     "3",
-    "3",
-    "3",
-    "3",
-    "3",
-    "3",
-    "3",
-    "3",
-    "3",
-    "3",
     "2",
     "2"
   ],
@@ -25,7 +16,7 @@
     "1": "Elyssia",
     "2": "Fishi",
     "3": "Water Goddess",
-    "4": "",
+    "4": "Phoenix",
     "5": "C.E.O.",
     "6": "Bulby"
   },
@@ -33,7 +24,6 @@
     "6",
     "5",
     "1",
-    "3",
     "4",
     "2"
   ],
@@ -48,15 +38,28 @@
   "walk_timeout": 10.0,
   "teleport_wait": 4.0,
   "use_map_zones": true,
+  "game_auto_upgrade": false,
   "actions": [],
   "after_match": "none",
   "upgrade_caps": {
     "3": 1
   },
-  "place_from_wave": {},
-  "upgrade_from_wave": {},
+  "place_from_wave": {
+    "1": 4,
+    "2": 4,
+    "3": 3,
+    "4": 4
+  },
+  "upgrade_from_wave": {
+    "1": 10,
+    "2": 10,
+    "4": 10
+  },
   "lobby_start": true,
   "lobby_walk": "d 5",
   "lobby_walk_extra": "s 0.5",
-  "day_only": false
+  "day_only": false,
+  "air_units": [
+    "4"
+  ]
 }

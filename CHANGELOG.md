@@ -3,6 +3,9 @@
 ## Unreleased
 
 **Fixed**
+- **Day zones on a Night stage.** The loading screen shows "Misty Village" and "Night Stage" on
+  separate lines, and the Day map matched the first; a map named for Day / Night now needs that
+  word in the same text.
 - **Misty Village: the lobby read as a match no longer gets match keys.** Live, the lobby (and the
   stage window, whose "for first clear" reads like the unit manager's First buttons) was read as a
   match / the unit manager: MAACRO pressed O, tried placing, and pressed F, which in the lobby

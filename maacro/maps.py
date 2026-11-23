@@ -56,10 +56,13 @@ class MapZones:
             return False
         # A map named for a time of day (Misty Village Day) never matches the
         # other one ("Misty Village Night Stage" is a close read otherwise).
+        # The time of day must be in the same text: the loading screen shows
+        # "Misty Village" and "Night Stage" on separate lines (seen live: the
+        # Day zones were loaded for a Night stage from the "Misty Village" line).
         words, seen = self.name.lower().split(), text.lower()
-        if "day" in words and "night" in seen:
+        if "day" in words and ("day" not in seen or "night" in seen):
             return False
-        if "night" in words and "day" in seen and "night" not in seen:
+        if "night" in words and "night" not in seen:
             return False
         return True
 
