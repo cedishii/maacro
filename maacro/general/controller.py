@@ -18,6 +18,8 @@ Voting Yes and picking cards are off unless switched on.
 """
 from __future__ import annotations
 
+import time
+
 from ..control import input as inp
 from ..macro import MacroThread, narrow_to_words
 from ..card_first import CardFirst
@@ -40,7 +42,8 @@ NEXT_WORDS = ("next stage", "next level", "next act", "next room", "next floor")
 LOBBY_WORDS = ("return to lobby",)
 AFTER_MATCH = {"replay": REPLAY_WORDS, "next": NEXT_WORDS + REPLAY_WORDS}
 AFTER_MATCH_EVERY = 20      # s between presses (a second press could cancel a vote)
-SPOT_AFTER_TRIES = 3        # presses without the button read → its usual spot
+SPOT_AFTER_SECONDS = 4.0    # button text not read for this long → press its usual spot
+REPLAY_DX = 1.19            # Replay: this × "Return to lobby"'s width right of its centre (measured)
 
 
 class GeneralThread(GameAutoUpgrade, CardFirst, PlaceOnlyUnits, ScrollingUpgrades, MacroThread):   # ScrollingUpgrades: more than 8 units
@@ -102,6 +105,7 @@ class GeneralThread(GameAutoUpgrade, CardFirst, PlaceOnlyUnits, ScrollingUpgrade
         super()._new_match()
         self._rezoomed = False
         self._after_tries = 0
+        self._after_seen_at = None
 
     def _on_in_match(self, hwnd: int) -> None:
         """Zoom out at the start of every match (MacroThread does that), and
@@ -182,20 +186,29 @@ class GeneralThread(GameAutoUpgrade, CardFirst, PlaceOnlyUnits, ScrollingUpgrade
         if words is None:
             self._wait("match over (Return to lobby / Replay is up to you)")
             return
-        if not self._cooldown("after_match", AFTER_MATCH_EVERY):
+        # AFTER_MATCH_EVERY s between presses (a second press could cancel the
+        # vote); looking is free. Seen live (Infinite): Replay's text unread,
+        # nothing pressed for 20 s — the spot used to wait for 3 looks 20 s apart.
+        now = time.monotonic()
+        if now - self._last_done.get("after_match", -1e9) < AFTER_MATCH_EVERY:
             return
         line = self._after_button(det, words, allow_lobby=any(w in LOBBY_WORDS for w in words))
         if line is not None:
+            self._last_done["after_match"] = now
             self._after_tries += 1
             name = line.text.strip() or "Replay"
             self._say(f"Match over → pressing {name}")
             self._click_line(hwnd, line, name)
             self._after_pressed(name, words)
             return
-        self._after_tries += 1
+        seen = getattr(self, "_after_seen_at", None)
+        if seen is None:
+            self._after_seen_at = seen = now
         replay = any(w in REPLAY_WORDS for w in words)
         spot = self._replay_spot(det) if replay else self._return_spot(det)
-        if spot is not None and self._after_tries > SPOT_AFTER_TRIES:
+        if spot is not None and now - seen >= SPOT_AFTER_SECONDS:
+            self._last_done["after_match"] = now
+            self._after_tries += 1
             name = "Replay" if replay else "Return to lobby"
             self._say(f"Match over → pressing {name} (button text not read — using its usual spot)")
             inp.click(hwnd, *spot)
@@ -221,8 +234,14 @@ class GeneralThread(GameAutoUpgrade, CardFirst, PlaceOnlyUnits, ScrollingUpgrade
         return None
 
     def _replay_spot(self, det: Detection):
-        """Replay sits right of the middle of "Waiting for Players" (Return to
-        lobby is left of it, see MacroThread._return_spot)."""
+        """Replay (white on yellow, often not read) sits right of "Return to
+        lobby", level with it (measured live in Misty Village: the spot from
+        "Waiting for Players" missed). With a Next button read on screen the
+        layout differs: then from "Waiting for Players"."""
+        texts = [_norm(l.text) for l in det.lines]
+        back = next((l for l in det.lines if "returntolobby" in _norm(l.text)), None)
+        if back is not None and back.w > 40 and not any(t.startswith("next") for t in texts):
+            return back.center_x + REPLAY_DX * back.w, back.y + back.h / 2
         waiting = self._line(det, "waiting for players")
         if waiting is None:
             return None
