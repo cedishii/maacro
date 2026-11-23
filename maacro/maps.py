@@ -248,11 +248,12 @@ def load_maps() -> list[MapZones]:
 
 
 def find_map(maps: list[MapZones], lines: list[OcrLine]) -> MapZones | None:
-    """The saved map whose name appears on screen (loading screen or match title)."""
-    for zones_map in maps:
-        if any(zones_map.matches(line.text) for line in lines):
-            return zones_map
-    return None
+    """The saved map whose name appears on screen (loading screen or match title).
+    The longest matching name wins: a recording saved as "Misty" or "Misty
+    Village" also matches "Misty Village Day Stage", and must not replace the
+    Day stage's own zones (it did: the first match in file order was used)."""
+    found = [m for m in maps if any(m.matches(line.text) for line in lines)]
+    return max(found, key=lambda m: len(m.name)) if found else None
 
 
 def spread(spots: list[tuple[float, float]], first_near: list[tuple[float, float]],
