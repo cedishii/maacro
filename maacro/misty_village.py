@@ -137,8 +137,9 @@ def stage_window_up(lines: list[OcrLine]) -> bool:
 
 
 END_WORDS = ("victory", "defeat")
-END_F_TRIES = 2         # F presses a match to uncover the end screen behind the unit manager
-END_F_EVERY = 3.0       # s between them (F toggles: give the first one time to show)
+END_F_TRIES = 6         # F presses a match to uncover the end screen behind the unit manager (F toggles: the
+                        # list can come back after a press read too early, seen live — so keep trying)
+END_F_EVERY = 5.0       # s between them: the list must be fully gone before the next look
 
 
 def match_over_behind(lines: list[OcrLine], height: int) -> bool:

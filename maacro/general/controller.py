@@ -43,7 +43,7 @@ LOBBY_WORDS = ("return to lobby",)
 AFTER_MATCH = {"replay": REPLAY_WORDS, "next": NEXT_WORDS + REPLAY_WORDS}
 AFTER_MATCH_EVERY = 20      # s between presses (a second press could cancel a vote)
 YES_STEADY = 3             # px: "Yes" this still between two reads = the vote box has stopped
-SPOT_AFTER_SECONDS = 4.0    # button text not read for this long → press its usual spot
+SPOT_AFTER_SECONDS = 1.0    # button text not read for this long → press its usual spot (Replay is almost never read; its spot works)
 REPLAY_DX = 1.19            # Replay: this × "Return to lobby"'s width right of its centre (measured)
 
 
