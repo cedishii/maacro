@@ -115,6 +115,7 @@ class MainWindow(QMainWindow):
             "Recorder": self._make_recorder,
         }
         self._built: dict[int, QWidget] = {}
+        self.main_page.mode_changed.connect(self._sync_mode)
 
         group = QButtonGroup(self)
         group.setExclusive(True)
@@ -177,6 +178,20 @@ class MainWindow(QMainWindow):
             self.pages.removeWidget(stand_in)
             stand_in.deleteLater()
             self._built[index] = page
+            self._follow_mode(page)
+
+    def _follow_mode(self, page) -> None:
+        """Pages with a mode of their own (Configs tab, Actions, Recorder)
+        show the mode picked on the Main page."""
+        show = getattr(page, "show_mode", None)
+        mode = getattr(self.main_page, "mode", None)
+        if show is not None and mode:
+            show(mode)
+
+    def _sync_mode(self, _key: str = "") -> None:
+        for page in self._built.values():
+            if page is not self.main_page:
+                self._follow_mode(page)
 
     def _make_detection(self) -> QWidget:
         self.detection_page = DetectionPage(self.capture, self.detector)

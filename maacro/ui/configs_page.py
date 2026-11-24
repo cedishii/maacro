@@ -757,3 +757,11 @@ class ConfigsPage(QWidget):
             "auto_card_pick": "Pick cards if a card vote shows up (off = wait)",
         }, mode_key="sky_portal"), "Sky Portal")
         layout.addWidget(tabs)
+        self.tabs = tabs
+
+    def show_mode(self, key: str) -> None:
+        """Open `key`'s tab (follows the mode picked on the Main page)."""
+        for index in range(self.tabs.count()):
+            if getattr(self.tabs.widget(index), "mode_key", None) == key:
+                self.tabs.setCurrentIndex(index)
+                return

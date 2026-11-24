@@ -20,10 +20,14 @@ HOW_TO = (
     "saved for that camera view, so don't move the camera while recording.\n"
     "2. Press Record, then place your units as usual: press the unit's key (1–6) or click its "
     "card, then click where it goes. Each spot shows up below. Right click or Esc cancels.\n"
-    "3. Check the map name and press Save. Any Stage mode then places each recorded unit in "
-    "its spots on that map (\"Use saved map zones\" on). Units you didn't record keep their "
+    "3. Check the map name and press Save. The mode picked on the Main page (Any Stage, Story, Infinite, "
+    "Challenge, Misty Village) then places each recorded unit in its spots on that map (\"Use saved map zones\" on). Units you didn't record keep their "
     "old zones, or get automatic spots."
 )
+
+
+# Modes that place units on maps/general spots (the Recorder's files).
+RECORDED_SPOT_MODES = {"general", "story", "infinite", "challenge", "misty_village"}
 
 
 def to_qimage(image) -> QImage:
@@ -59,8 +63,13 @@ class RecorderPage(QWidget):
         top.addWidget(self.record_button)
         layout.addLayout(top)
 
+        self.mode_note = QLabel("")
+        self.mode_note.setWordWrap(True)
+        layout.addWidget(self.mode_note)
         self.status = QLabel("Not recording.", objectName="Muted")
         layout.addWidget(self.status)
+        self.mode_key = "general"
+        self.show_mode("general")
 
         body = QHBoxLayout()
         self.view = LiveView()
@@ -180,7 +189,26 @@ class RecorderPage(QWidget):
         lined_up = "" if self.recording.anchor else (
             " (the map title wasn't readable, so the spots are lined up from the window size)")
         self._say(f"Saved {len(self.recording.spots)} spot(s) for unit(s) {units} to "
-                  f"maps/general/{path.name}{lined_up}. Press Start again in Any Stage mode to use them.", theme.WIN)
+                  f"maps/general/{path.name}{lined_up}. Press Start again in {self._mode_label()} to use them.", theme.WIN)
+
+    def show_mode(self, key: str) -> None:
+        """Follows the Main page's mode: say whether that mode uses recorded spots."""
+        from ..modes import BY_KEY
+        self.mode_key = key
+        label = BY_KEY[key].label if key in BY_KEY else key
+        if key in RECORDED_SPOT_MODES:
+            self.mode_note.setText(f"Recording for: {label} — it places each recorded unit on these spots "
+                                   "(\"Use saved map zones\" on).")
+            self.mode_note.setStyleSheet(f"color: {theme.WIN};")
+        else:
+            self.mode_note.setText(f"Mode: {label} — this mode doesn't use recorded spots (it has its own "
+                                   "map zones). Switch mode on the Main page to record for another mode.")
+            self.mode_note.setStyleSheet(f"color: {theme.LOSS};")
+
+    def _mode_label(self) -> str:
+        from ..modes import BY_KEY
+        mode = BY_KEY.get(self.mode_key)
+        return mode.label if mode else "Any Stage"
 
     def _say(self, text: str, color: str) -> None:
         self.message.setStyleSheet(f"color: {color};")

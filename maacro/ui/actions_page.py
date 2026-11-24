@@ -167,6 +167,13 @@ class ActionsPage(QWidget):
         self.mode_box.setCurrentIndex(max(0, index))
         self._load_mode()
 
+    def show_mode(self, key: str) -> None:
+        """Show `key`'s actions (follows the Main page's mode; a mode without
+        actions leaves the box as it is)."""
+        index = self.mode_box.findData(key)
+        if index >= 0 and index != self.mode_box.currentIndex():
+            self.mode_box.setCurrentIndex(index)
+
     def _mode(self):
         key = self.mode_box.currentData()
         return next(m for m in action_modes() if m.key == key)
