@@ -30,7 +30,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from .close_x import close_button
+from .close_x import close_button, red_x_buttons
 from .control import input as inp
 from .vision.ocr import OcrLine
 from .vision.screens import _norm, fuzzy_in
@@ -40,12 +40,15 @@ AREAS_SPOT = (0.966, 0.856)
 AREAS_REGION = (0.88, 0.62, 1.0, 0.96)             # x0, y0, x1, y1: the right-hand buttons
 POPUP_REGION = (0.15, 0.05, 0.85, 0.95)            # the middle: popups and the world / stage windows
 PLAY_SPOT = (0.079, 0.474)                         # the lobby's Play button (gamepad), left column
+PARTY_LOOK = 3.0        # s in the lobby looking for the party panel before going alone
 PARTY_WAIT = 10.0       # s in the lobby before starting, so party members load in
 PLAY_REGION = (0.0, 0.25, 0.14, 0.75)              # the lobby buttons on the left (Units, Store, Play…)
 # The area tiles, from the "Areas (Click to Teleport)" title: (dx, dy) × the title's width.
 TILE_FROM_TITLE = {"challenges": (-0.15, 0.93), "play area": (0.53, 0.56)}
 WAIT_FOR_MATCH = 90      # s after the last step before the try counts as failed
-FAIL_WAIT = {"story": 30, "infinite": 30, "challenge": 300, "misty": 30}   # s before trying again after a failure
+FAIL_WAIT = {"story": 30, "infinite": 30, "challenge": 300, "misty": 10}   # s before trying again after a failure
+CLEAR_TRIES = 4          # windows closed (red X) after a failed lobby step, one at a time
+TILE_TRIES = 2           # clicks on the Play window's tile before giving up (it must close = teleport)
 SCROLL_TRIES = 12        # scrolls of a list looking for the map / act
 SHOTS_DIR = Path(__file__).resolve().parents[1] / "logs" / "lobby"
 KEEP_SHOTS = 20
@@ -248,7 +251,9 @@ class LobbyStarter:
             det = self.detector.latest
             self._party_seen = mode == "always" or (det is not None and party_leader(det.lines) is not None)
             if not self._party_seen:
-                return 0.0
+                # The party panel shows a moment after the lobby does (live:
+                # Play was clicked the second the lobby showed, the panel up).
+                return max(0.0, arrived + PARTY_LOOK - now)
         return max(0.0, arrived + PARTY_WAIT - now)
 
     def _on_lobby(self, hwnd: int) -> None:
@@ -299,6 +304,30 @@ class LobbyStarter:
         cancel = find_word(self._read(), "cancel", exact=True)
         if cancel is not None:
             self._click(self._hwnd_now(), cancel, "Cancel")
+            self._sleep(0.6)
+        self._clear_windows(self._hwnd_now())
+
+    def _clear_windows(self, hwnd: int) -> int:
+        """Close whatever windows are open in the lobby (Play, Collection,
+        Areas, shops…) with their red X, one at a time: a window's X can hide
+        the one under it. The unit cards' small sell X are never matched
+        (close_x keeps to window-sized buttons). Returns how many it closed."""
+        closed = 0
+        for _ in range(CLEAR_TRIES):
+            _, frame = self.capture.latest_frame()
+            buttons = red_x_buttons(frame) if frame is not None else []
+            if not buttons:
+                break
+            x, y, w, h = min(buttons, key=lambda b: b[1])     # the top one: usually the front window
+            inp.focus(hwnd)
+            inp.click(hwnd, x + w / 2, y + h / 2)
+            self._park_mouse(hwnd)
+            closed += 1
+            if not self._sleep(0.8):
+                break
+        if closed:
+            self.log.emit(f"Lobby: closed {closed} window(s) that were in the way.", "Info")
+        return closed
 
     def _save_failure(self, why: str) -> Path | None:
         """The current picture → logs/lobby/<time>_<why>.png (the newest KEEP_SHOTS kept)."""
@@ -404,8 +433,18 @@ class LobbyStarter:
                 self._park_mouse(hwnd)
                 self._sleep(0.5)
             return False
-        self._click(hwnd, tile, self.PLAY_TILE.title())
-        return True
+        for attempt in range(TILE_TRIES):
+            if attempt:
+                self.log.emit(f"Lobby: still in the Play window — clicking {self.PLAY_TILE.title()} again.", "Info")
+            self._click(hwnd, tile, self.PLAY_TILE.title())
+            gone = self._wait_for(
+                lambda lines: None if find_word(lines, "where do you want to play", threshold=0.7) else True, 4)
+            if gone:
+                return True
+        # Seen live: the Collection window had opened under it and the click
+        # did nothing; MAACRO then walked around the lobby.
+        self.log.emit(f"Lobby: clicking {self.PLAY_TILE.title()} didn't teleport.", "Warn")
+        return False
 
     def _open_area_tile(self, hwnd: int, title: OcrLine) -> bool:
         """Click this mode's tile in the Areas window (False = gave up)."""
