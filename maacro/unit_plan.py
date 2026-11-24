@@ -64,6 +64,7 @@ def with_unit_plan(cls):
         def _new_match(self) -> None:
             super()._new_match()
             self._plan_wave = 0
+            self._plan_jump = None
             self._plan_logged: set[str] = set()
             self._names_checked = False
 
@@ -109,9 +110,18 @@ def with_unit_plan(cls):
                 self.names_read.emit(found)
 
         def _plan_current_wave(self) -> int:
+            """The highest wave read this match. A jump of more than 2 (e.g.
+            "Wave 4" read as "Wave 14") only counts once it's read twice in a
+            row: one misread would release every wave-held unit at once."""
             wave = getattr(getattr(self.detector, "tracker", None), "wave", None)
-            if isinstance(wave, int) and wave > getattr(self, "_plan_wave", 0):
-                self._plan_wave = wave
+            now = getattr(self, "_plan_wave", 0)
+            if isinstance(wave, int) and wave > now:
+                if now and wave > now + 2 and getattr(self, "_plan_jump", None) != wave:
+                    self._plan_jump = wave          # wait for a second read
+                else:
+                    self._plan_wave = wave
+            elif isinstance(wave, int):
+                self._plan_jump = None
             return getattr(self, "_plan_wave", 0)
 
         def _plan_note(self, tag: str, text: str) -> None:

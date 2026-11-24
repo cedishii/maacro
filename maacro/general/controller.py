@@ -154,6 +154,10 @@ class GeneralThread(GameAutoUpgrade, CardFirst, PlaceOnlyUnits, ScrollingUpgrade
         self._wait("verification is up to you")
 
     def _on_vote_start(self, hwnd: int) -> None:
+        # A new round is starting: the "match just ended" guard (15 s of no
+        # placing, against the end screens being read as the match) is over.
+        # Live (Replay in Misty Village): placing started 10 s into the round.
+        self._ended_at = -1e9
         if self.settings.auto_vote_start:
             if not self._vote_box_settled():
                 self._say("Vote start — waiting for the vote box to stop moving", log=False)
