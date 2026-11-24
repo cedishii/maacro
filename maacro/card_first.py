@@ -86,9 +86,10 @@ from .card_strategy import CardStrategy  # noqa: E402
 from .place_only import PlaceOnlyUnits  # noqa: E402
 from .game_auto_upgrade import GameAutoUpgrade  # noqa: E402
 from .upgrades import ScrollingUpgrades  # noqa: E402
+from .summer_play import SummerPlayTile  # noqa: E402
 
 
-class SummerThread(GameAutoUpgrade, CardStrategy, CardFirst, PlaceOnlyUnits, ScrollingUpgrades, MacroThread):
+class SummerThread(SummerPlayTile, GameAutoUpgrade, CardStrategy, CardFirst, PlaceOnlyUnits, ScrollingUpgrades, MacroThread):
     """Summer Event: MacroThread with card picks first (Easy / Secret Chances),
     place-only units, and every unit upgraded (the Unit Overview scrolled, not
     just the 8 on screen)."""
