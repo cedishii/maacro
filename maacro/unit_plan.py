@@ -2,6 +2,8 @@
 
     upgrade_caps       {"1": 2}   upgrade unit 1 only up to upgrade 2
     place_from_wave    {"4": 10}  don't place unit 4 before wave 10
+    place_waves        {"5": [1, 2, 2]}  per placement: unit 5's 1st from wave 1,
+                                         the 2nd and 3rd from wave 2
     upgrade_from_wave  {"3": 15}  don't upgrade unit 3 before wave 15
 
 (Capy-style macros do this with a scripted list of "at wave N: place / upgrade
@@ -121,10 +123,30 @@ def with_unit_plan(cls):
                 self.log.emit(text, "Info")
 
         # --- placing -------------------------------------------------------
+        def _next_waits(self) -> dict[str, int]:
+            """{key: wave} the next placement of each pending unit waits for."""
+            cfg, m = self.settings, self.match
+            waits = _wave_map(cfg, "place_from_wave")
+            per = getattr(cfg, "place_waves", {}) or {}
+            for key, waves in per.items():
+                key = str(key)
+                if key not in m.pending or not isinstance(waves, (list, tuple)):
+                    continue
+                done = cfg.placement_order.count(key) - m.pending.count(key)    # placed so far
+                try:
+                    n = int(waves[min(done, len(waves) - 1)]) if waves else 0
+                except (TypeError, ValueError):
+                    continue
+                if n > 0:
+                    waits[key] = n
+                else:
+                    waits.pop(key, None)
+            return waits
+
         def _place_paused(self) -> bool:
             if super()._place_paused():
                 return True
-            waits = _wave_map(self.settings, "place_from_wave")
+            waits = self._next_waits()
             m = self.match
             if not waits or not m.pending:
                 return False
@@ -135,8 +157,8 @@ def with_unit_plan(cls):
             ready = [k for k in m.pending if k not in held]
             later = [k for k in m.pending if k in held]
             for key in dict.fromkeys(later):
-                self._plan_note(f"place_{key}", f"{self._unit_label(key)}: placed from wave "
-                                                f"{waits[key]} (now {wave or '—'}).")
+                self._plan_note(f"place_{key}_{waits[key]}", f"{self._unit_label(key)}: next one from wave "
+                                                             f"{waits[key]} (now {wave or '—'}).")
             if not ready:
                 return True             # only held units left: upgrade meanwhile
             m.pending[:] = ready + later
