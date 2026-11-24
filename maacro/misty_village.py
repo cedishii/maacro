@@ -261,9 +261,24 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
             return
         det = self.detector.latest
         if det is not None and match_over_behind(det.lines, self._frame_wh()[1]):
-            self._uncover_end(hwnd)
+            if overview_title(det.lines) is not None:
+                self._uncover_end(hwnd)                 # the list is really open: F closes it
+            else:
+                # Read as "unit manager" without the list (live 23:17: a unit's
+                # info box was open on the results): F does nothing there. The
+                # village shop step closes the shop; then Next.
+                self._end_without_list(hwnd, det)
             return
         super()._on_unit_manager(hwnd)
+
+    def _end_without_list(self, hwnd: int, det) -> None:
+        if shop_title(det.lines, self._frame_wh()[1]) is not None:
+            return                                      # _close_chat closes it (every loop)
+        nxt = next((l for l in det.lines if _norm(l.text) == "next"), None)
+        if nxt is not None and self._cooldown("end_next", 3):
+            self._say("Match over → clicking Next")
+            self._click_line(hwnd, nxt, "Next")
+            self._park_mouse(hwnd)
 
     def _uncover_end(self, hwnd: int) -> bool:
         """Close the unit manager (F) so the end screen / village shop under it
@@ -379,7 +394,9 @@ class MistyVillageThread(FindMatchSpot, LobbyStarter, GeneralThread):
         title = shop_title(det.lines, self._frame_wh()[1])
         if title is None or not self._cooldown("village_shop", 2.0):
             return False
-        manager = det.screen == "unit_manager" or overview_title(det.lines) is not None
+        # Only the list itself counts (its title): a unit's info box also reads
+        # as "unit manager" (live 23:17), and its X is the shop's way out.
+        manager = overview_title(det.lines) is not None
         _, frame = self.capture.latest_frame()
         spot = None if manager else close_button(frame, title)
         if manager:
