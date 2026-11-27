@@ -25,6 +25,9 @@ class GeneralConfig(MacroConfig):
     # this many upgrades, and don't place / upgrade before this wave.
     upgrade_caps: dict[str, int] = field(default_factory=dict)
     place_from_wave: dict[str, int] = field(default_factory=dict)
+    # Units that aren't mandatory (Configs → untick "Mandatory"): given up on
+    # for the match after OPTIONAL_WAVES waves of not going down (see unit_plan.py).
+    optional_units: list[str] = field(default_factory=list)
     # Per placement: {"5": [1, 2, 2]} = C.E.O.'s 1st from wave 1, 2nd and 3rd
     # from wave 2 (overrides place_from_wave for that unit).
     place_waves: dict[str, list] = field(default_factory=dict)

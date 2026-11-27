@@ -118,6 +118,15 @@ class UnitCard(QFrame):
         grid.addWidget(QLabel(f"Unit {key}", objectName="PanelTitle"), 0, 0)
         self.enabled = QCheckBox("Enabled")
         grid.addWidget(self.enabled, 0, 1)
+        self.mandatory = None
+        if wave_option:
+            self.mandatory = QCheckBox("Mandatory")
+            self.mandatory.setChecked(True)
+            self.mandatory.setToolTip("Ticked: MAACRO keeps trying until this unit is placed. "
+                                      "Unticked: it's tried for 5 waves, then skipped for the match "
+                                      "(e.g. a hill unit with no hill in sight), so the others and "
+                                      "the upgrades aren't held up.")
+            grid.addWidget(self.mandatory, 0, 2)
         self.name = QLineEdit(placeholderText="Name in the unit manager")
         self.name.setToolTip("As shown in the unit manager (used for upgrade priority).")
         grid.addWidget(self.name, 1, 0, 1, 2)
@@ -191,7 +200,7 @@ class UnitCard(QFrame):
 
     def _enable(self, on: bool) -> None:
         for widget in (self.placements, self.place_priority, self.no_upgrade, self.path, self.farm,
-                       self.place_wave, self.air):
+                       self.place_wave, self.air, self.mandatory):
             if widget is not None:
                 widget.setEnabled(on)
         upgrades = on and not self.no_upgrade.isChecked()
@@ -584,6 +593,9 @@ class ModeSettings(QWidget):
                                        place_waves.get(key, 0), upgrade_waves.get(key, 0))
             if self.cards[key].air is not None:
                 self.cards[key].air.setChecked(key in set(getattr(config, "air_units", [])))
+            if self.cards[key].mandatory is not None:
+                optional = {str(k) for k in (getattr(config, "optional_units", []) or [])}
+                self.cards[key].mandatory.setChecked(key not in optional)
         for name, box in self.switches.items():
             box.setChecked(bool(getattr(config, name)))
         for name, buttons in self.choices.items():
@@ -626,6 +638,10 @@ class ModeSettings(QWidget):
                                       if card.place_wave.value() > 0 and cards[k]["enabled"]}
             config.upgrade_from_wave = {k: card.upgrade_wave.value() for k, card in self.cards.items()
                                         if card.upgrade_wave.value() > 0 and cards[k]["enabled"]}
+            if hasattr(config, "optional_units"):
+                config.optional_units = [k for k, card in self.cards.items()
+                                         if card.mandatory is not None and not card.mandatory.isChecked()
+                                         and cards[k]["enabled"]]
         if self.air:
             config.air_units = [k for k, card in self.cards.items()
                                 if card.air is not None and card.air.isChecked() and cards[k]["enabled"]]

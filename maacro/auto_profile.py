@@ -20,7 +20,7 @@ from .history import split_map
 # What a profile changes: the unit setup and how it's played, not the mode's
 # switches the player set on purpose for this session.
 PROFILE_FIELDS = ("placement_order", "unit_names", "upgrade_priority", "path_units", "farm_units",
-                  "green_units", "upgrade_caps", "place_from_wave", "upgrade_from_wave",
+                  "green_units", "upgrade_caps", "place_from_wave", "upgrade_from_wave", "optional_units",
                   "card_strategy", "zoom_out_seconds")
 MAP_SCREENS = ("loading", "vote_start", "in_match")
 

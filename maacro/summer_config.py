@@ -19,6 +19,9 @@ class SummerConfig(MacroConfig):
     # this many upgrades, and don't place / upgrade before this wave.
     upgrade_caps: dict[str, int] = field(default_factory=dict)
     place_from_wave: dict[str, int] = field(default_factory=dict)
+    # Units that aren't mandatory (Configs → untick "Mandatory"): given up on
+    # for the match after OPTIONAL_WAVES waves of not going down (see unit_plan.py).
+    optional_units: list[str] = field(default_factory=list)
     upgrade_from_wave: dict[str, int] = field(default_factory=dict)
 
     @classmethod
